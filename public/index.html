@@ -258,8 +258,8 @@ function render(){
     h+='<input type="file" id="fi" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv" style="display:none">';
     h+='<div style="text-align:center;color:rgba(240,237,232,.25);font-size:11px;margin:10px 0">— ou colle le texte —</div>';
     h+='<div style="display:flex;gap:8px;align-items:flex-start">' +
-      '<textarea id="ta" placeholder="Colle le texte de ton ticket ici..." style="flex:1;height:90px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;color:#F0EDE8;padding:10px;font-size:12px;font-family:monospace;resize:none;outline:none" oninput="onPaste(this.value)"></textarea>' +
-      '<button onclick="const v=document.getElementById(\'ta\').value;if(v.trim().length>5){clearTimeout(_pt);analyzeText(v);}" style="background:#5BF5A8;color:#0A0A0F;border:none;border-radius:12px;padding:10px 14px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px;white-space:nowrap">⚡ Analyser</button>' +
+      '<textarea id="ta" placeholder="Colle le texte de ton ticket ici..." style="flex:1;height:90px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;color:#F0EDE8;padding:10px;font-size:12px;font-family:monospace;resize:none;outline:none" oninput="window._taVal=this.value"></textarea>' +
+      '<button onclick="const v=window._taVal||document.getElementById('ta')?.value||'';if(v.trim().length>5){analyzeText(v);}else{alert('Colle du texte dans la zone avant de cliquer');}" style="background:#5BF5A8;color:#0A0A0F;border:none;border-radius:12px;padding:10px 14px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px;white-space:nowrap">⚡ Analyser</button>' +
     '</div>';
     if(msg&&status==='error')h+='<div class="err">⚠️ '+msg+'</div>';
   }else if(sec==='compare'&&res){
@@ -311,6 +311,9 @@ function render(){
   const fi=document.getElementById('fi');
   const dz=document.getElementById('dz');
   if(fi)fi.onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);};
+  // Restaurer valeur textarea après re-render
+  const ta=document.getElementById('ta');
+  if(ta && window._taVal) ta.value = window._taVal;
   if(dz){dz.ondragover=e=>{e.preventDefault();dz.style.borderColor='#5BF5A8';};dz.ondragleave=()=>{dz.style.borderColor='';};dz.ondrop=e=>{e.preventDefault();dz.style.borderColor='';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);};}
 }
 render();
