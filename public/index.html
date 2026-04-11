@@ -69,128 +69,145 @@ h1{font-size:22px;font-weight:900;text-align:center;padding:20px 0 4px}
 <script>
 const CATS=[{id:'food',icon:'🥦',label:'Alimentaire'},{id:'tech',icon:'💻',label:'Tech'},{id:'home',icon:'🏠',label:'Maison'},{id:'fashion',icon:'👗',label:'Mode'},{id:'sport',icon:'⚽',label:'Sport'},{id:'beauty',icon:'💄',label:'Beauté'}];
 const STORES=[{id:'leclerc',name:'E.Leclerc',color:'#0052CC',letter:'E',factor:1.00},{id:'carrefour',name:'Carrefour',color:'#003DA5',letter:'C',factor:1.08},{id:'intermarche',name:'Intermarché',color:'#E31E24',letter:'I',factor:1.04},{id:'lidl',name:'Lidl',color:'#FFC61E',letter:'L',factor:0.95,cheap:true},{id:'auchan',name:'Auchan',color:'#E31E24',letter:'A',factor:1.06},{id:'monoprix',name:'Monoprix',color:'#E63946',letter:'M',factor:1.22}];
-const DRIVE={leclerc:{name:'E.Leclerc Drive',url:q=>'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche='+encodeURIComponent(q),ms:3500,note:'Connecte-toi sur fd3-courses.leclercdrive.fr · Rueil-Malmaison'},carrefour:{name:'Carrefour',url:q=>'https://www.carrefour.fr/s?q='+encodeURIComponent(q)+'&ref=search',ms:4000,note:'Connecte-toi sur carrefour.fr avant de démarrer'},intermarche:{name:'Intermarché',url:q=>'https://www.intermarche.com/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur intermarche.com avant de démarrer'},auchan:{name:'Auchan',url:q=>'https://www.auchan.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur auchan.fr avant de démarrer'},monoprix:{name:'Monoprix',url:q=>'https://www.monoprix.fr/recherche/'+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur monoprix.fr avant de démarrer'},lidl:{name:'Lidl',url:q=>'https://www.lidl.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Disponible en livraison sur lidl.fr'}};
-const FP='JSON only: {"products":[{"original":"","search":"","qty":1,"price":0}],"store":"","total":0,"date":""}. Liste tous les produits du ticket.';
-const SYS='Tu extrais des données de tickets de caisse. Réponds uniquement avec du JSON valide.';
-let S={catId:'food',sec:'import',file:null,status:'idle',msg:'',results:{},store:null};
+const DRIVE={leclerc:{name:'E.Leclerc Drive',url:q=>'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche='+encodeURIComponent(q),ms:3500,note:'Connecte-toi sur fd3-courses.leclercdrive.fr (Rueil-Malmaison)'},carrefour:{name:'Carrefour',url:q=>'https://www.carrefour.fr/s?q='+encodeURIComponent(q)+'&ref=search',ms:4000,note:'Connecte-toi sur carrefour.fr avant de démarrer'},intermarche:{name:'Intermarché',url:q=>'https://www.intermarche.com/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur intermarche.com avant de démarrer'},auchan:{name:'Auchan',url:q=>'https://www.auchan.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur auchan.fr avant de démarrer'},monoprix:{name:'Monoprix',url:q=>'https://www.monoprix.fr/recherche/'+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur monoprix.fr avant de démarrer'},lidl:{name:'Lidl',url:q=>'https://www.lidl.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Disponible en livraison sur lidl.fr'}};
+const FP='Extrait les produits. JSON uniquement: {"products":[{"original":"","search":"","qty":1,"price":0}],"store":"","total":0,"date":""}';
+const SYS='Reponds uniquement avec du JSON valide, sans markdown.';
+let S={catId:'food',sec:'import',status:'idle',msg:'',results:{},store:null};
 function set(p){Object.assign(S,p);render();}
 let _key=null;
-async function getKey(){if(_key)return _key;try{const r=await fetch('/api/key');const d=await r.json();_key=d.k;return _key;}catch(e){return '';}}
-async function callAI(msgs,n=4000){
-  const k=await getKey();if(!k)throw new Error('Clé API indisponible');
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:n,system:SYS,messages:msgs})});
-  const d=await r.json();if(!r.ok)throw new Error(d?.error?.message||'Erreur '+r.status);
-  if(d.stop_reason==='max_tokens')throw new Error('MAX_TOKENS');
-  const t=d.content?.find(b=>b.type==='text')?.text||'';
-  const m=t.match(/\{[\s\S]*\}/);if(!m)throw new Error('Pas de JSON dans la réponse');
+async function getKey(){
+  if(_key)return _key;
+  const r=await fetch('/api/key');
+  const d=await r.json();
+  _key=d.k;
+  return _key;
+}
+async function callAI(text,isB64Pdf){
+  const key=await getKey();
+  let content;
+  if(isB64Pdf){
+    content=[{type:'document',source:{type:'base64',media_type:'application/pdf',data:isB64Pdf}},{type:'text',text:FP}];
+  }else{
+    content=text+'\n\n'+FP;
+  }
+  const r=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:2000,system:SYS,messages:[{role:'user',content}]}),
+  });
+  const data=await r.json();
+  if(!r.ok)throw new Error(data?.error?.message||'Erreur API '+r.status);
+  const txt=data.content?.[0]?.text||'';
+  const m=txt.match(/\{[\s\S]*\}/);
+  if(!m)throw new Error('Pas de JSON: '+txt.slice(0,100));
   return JSON.parse(m[0]);
 }
-async function pdfText(buf){
-  try{if(typeof pdfjsLib==='undefined')return '';pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const p=await pdfjsLib.getDocument({data:buf}).promise;let t='';for(let i=1;i<=p.numPages;i++){const pg=await p.getPage(i);const c=await pg.getTextContent();t+=c.items.map(x=>x.str).join(' ')+'\n';}return t;}catch(e){return '';}
-}
 function toB64(buf){const b=new Uint8Array(buf);let s='';for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s);}
-async function analyze(){
-  if(!S.file){set({msg:'Aucun fichier'});return;}
-  set({status:'loading',msg:'Extraction du ticket...',sec:'compare'});
+async function analyzeText(text){
+  set({status:'loading',msg:'Analyse en cours...',sec:'compare'});
   try{
-    let msgs;
-    if(S.file.type==='pdf'){
-      const txt=await pdfText(S.file.data);
-      // PDF scanné: envoyer en base64 avec prompt court
-      const b64pdf = toB64(S.file.data);
-      msgs=[{role:'user',content:[
-        {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64pdf}},
-        {type:'text',text:FP}
-      ]}];
-    }else if(S.file.type==='img'){
-      msgs=[{role:'user',content:[{type:'image',source:{type:'base64',media_type:S.file.mime,data:S.file.b64}},{type:'text',text:FP}]}];
-    }else{
-      msgs=[{role:'user',content:S.file.text+'\n\n'+FP}];
-    }
-    set({msg:'Analyse en cours...'});
-    const res=await callAI(msgs,2000);
-    if(!res.products?.length)throw new Error('Aucun produit trouvé');
+    const res=await callAI(text,null);
+    if(!res.products?.length)throw new Error('Aucun produit trouve');
     const results={...S.results};results[S.catId]=res;
     set({status:'done',results,msg:'',store:null,sec:'compare'});
-  }catch(e){set({status:'error',msg:e.message,sec: Object.keys(S.results).length>0 ? 'compare' : 'import'});}
+  }catch(e){
+    set({status:'error',msg:e.message,sec:'import'});
+  }
+}
+async function analyzePdf(buf){
+  set({status:'loading',msg:'Analyse du ticket...',sec:'compare'});
+  try{
+    const b64=toB64(buf);
+    const res=await callAI(null,b64);
+    if(!res.products?.length)throw new Error('Aucun produit trouve');
+    const results={...S.results};results[S.catId]=res;
+    set({status:'done',results,msg:'',store:null,sec:'compare'});
+  }catch(e){
+    set({status:'error',msg:e.message,sec:'import'});
+  }
 }
 async function handleFile(f){
   const ext=f.name.split('.').pop().toLowerCase();
-  if(ext==='pdf'){const d=await f.arrayBuffer();set({file:{name:f.name,type:'pdf',data:d}});await analyze();}
-  else if(['jpg','jpeg','png','webp'].includes(ext)){const r=new FileReader();r.onload=async e=>{set({file:{name:f.name,type:'img',mime:f.type,b64:e.target.result.split(',')[1]}});await analyze();};r.readAsDataURL(f);}
-  else{const t=await f.text();set({file:{name:f.name,type:'txt',text:t}});await analyze();}
-}
-function est(products,sid){const s=STORES.find(x=>x.id===sid);if(!s)return 0;return +(products.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*s.factor).toFixed(2);}
-function emAmt(products){const f=Math.min(...STORES.map(s=>s.factor));return +(products.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*f).toFixed(2);}
-function emSave(products){const base=products.reduce((a,p)=>a+(p.price*(p.qty||1)),0);const avg=STORES.reduce((a,s)=>a+s.factor,0)/STORES.length;const best=Math.min(...STORES.map(s=>s.factor));return +(base*(avg-best)).toFixed(2);}
-let _running=false;
-async function startCart(sid,products){
-  if(_running)return;_running=true;
-  const cfg=DRIVE[sid];if(!cfg){alert('Non configuré');_running=false;return;}
-  showProg(products,0,cfg.name);
-  for(let i=0;i<products.length;i++){
-    showProg(products,i,cfg.name);
-    window.open(cfg.url(products[i].search),'_cart');
-    await new Promise(r=>setTimeout(r,cfg.ms));
+  if(ext==='pdf'){
+    const buf=await f.arrayBuffer();
+    await analyzePdf(buf);
+  }else if(['jpg','jpeg','png','webp'].includes(ext)){
+    const r=new FileReader();
+    r.onload=async e=>{
+      const b64=e.target.result.split(',')[1];
+      set({status:'loading',msg:'Analyse en cours...',sec:'compare'});
+      try{
+        const key=await getKey();
+        const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:2000,system:SYS,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:f.type,data:b64}},{type:'text',text:FP}]}]})});
+        const data=await resp.json();
+        const txt=data.content?.[0]?.text||'';
+        const m=txt.match(/\{[\s\S]*\}/);
+        if(!m)throw new Error('Pas de JSON');
+        const res=JSON.parse(m[0]);
+        if(!res.products?.length)throw new Error('Aucun produit');
+        const results={...S.results};results[S.catId]=res;
+        set({status:'done',results,msg:'',store:null,sec:'compare'});
+      }catch(e){set({status:'error',msg:e.message,sec:'import'});}
+    };
+    r.readAsDataURL(f);
+  }else{
+    const text=await f.text();
+    await analyzeText(text);
   }
-  showProg(products,products.length,cfg.name);
-  _running=false;
 }
-function showProg(prods,cur,name){
+let _pt=null;
+function onPaste(v){
+  clearTimeout(_pt);
+  if(v.trim().length<10)return;
+  _pt=setTimeout(()=>analyzeText(v),600);
+}
+function est(prods,sid){const s=STORES.find(x=>x.id===sid);if(!s)return 0;return +(prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*s.factor).toFixed(2);}
+function emAmt(prods){return +(prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*Math.min(...STORES.map(s=>s.factor))).toFixed(2);}
+function emSave(prods){const base=prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0);return +(base*(STORES.reduce((a,s)=>a+s.factor,0)/STORES.length-Math.min(...STORES.map(s=>s.factor)))).toFixed(2);}
+let _run=false;
+async function startCart(sid,prods){
+  if(_run)return;_run=true;
+  const cfg=DRIVE[sid];if(!cfg){alert('Non configure');_run=false;return;}
+  prog(prods,0,cfg.name);
+  for(let i=0;i<prods.length;i++){prog(prods,i,cfg.name);window.open(cfg.url(prods[i].search),'_cart');await new Promise(r=>setTimeout(r,cfg.ms));}
+  prog(prods,prods.length,cfg.name);_run=false;
+}
+function prog(prods,cur,name){
   let el=document.getElementById('_prog');
-  if(!el){el=document.createElement('div');el.id='_prog';el.className='prog';document.body.appendChild(el);}
-  if(cur>=prods.length){el.innerHTML='<div class="prog-head"><span>✅ '+prods.length+' produits ajoutés sur '+name+'</span><button class="btn-x" onclick="document.getElementById(\'_prog\').remove()">Fermer</button></div>';return;}
+  if(!el){el=document.createElement('div');el.id='_prog';el.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#0A0A0F;border-top:2px solid #5BF5A8;padding:14px 20px;z-index:999';document.body.appendChild(el);}
+  if(cur>=prods.length){el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#5BF5A8;font-weight:800">✅ '+prods.length+' produits sur '+name+'</span><button onclick="document.getElementById(\'_prog\').remove()" style="background:none;border:1px solid rgba(240,237,232,.2);color:rgba(240,237,232,.4);padding:4px 10px;border-radius:8px;cursor:pointer;font-family:inherit">Fermer</button></div>';return;}
   const pct=Math.round(cur/prods.length*100);
-  el.innerHTML='<div class="prog-head"><span>🛒 '+cur+'/'+prods.length+' · '+name+'</span><button class="btn-x" onclick="_running=false;document.getElementById(\'_prog\').remove()">Annuler</button></div><div class="prog-track"><div class="prog-fill" style="width:'+pct+'%"></div></div><div class="prog-prod">📦 '+prods[cur].search+'</div>';
+  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="color:#5BF5A8;font-weight:800;font-size:13px">🛒 '+cur+'/'+prods.length+' · '+name+'</span><button onclick="_run=false;document.getElementById(\'_prog\').remove()" style="background:none;border:1px solid rgba(240,237,232,.2);color:rgba(240,237,232,.4);padding:4px 10px;border-radius:8px;cursor:pointer;font-size:11px;font-family:inherit">Annuler</button></div><div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;margin-bottom:8px"><div style="background:#5BF5A8;height:6px;border-radius:4px;width:'+pct+'%;transition:width .4s"></div></div><div style="font-size:12px;color:rgba(240,237,232,.5)">📦 '+prods[cur].search+'</div>';
 }
-let _pasteTimer=null;
-function handlePaste(text){
-  clearTimeout(_pasteTimer);
-  if(text.trim().length < 20) return;
-  _pasteTimer = setTimeout(async()=>{
-    set({file:{name:'ticket.txt',type:'txt',text:text}});
-    await analyze();
-  }, 800);
-}
-window.handlePaste=handlePaste;
-
 function render(){
   const {catId,sec,status,msg,results,store}=S;
   const res=results[catId];
   let h='';
-  // Tabs
   h+='<div class="tabs">';
   CATS.forEach(c=>{h+='<button class="tab-btn '+(c.id===catId?'active':'')+'" onclick="set({catId:\''+c.id+'\',sec:\'import\'})"><span class="tab-icon">'+c.icon+'</span><span>'+c.label+'</span></button>';});
   h+='</div>';
-  // Section tabs
   h+='<div class="sec-tabs">';
   h+='<button class="sec-btn '+(sec==='import'?'active':'')+'" onclick="set({sec:\'import\'})">📥 Importer</button>';
   h+='<button class="sec-btn '+(sec==='compare'&&res?'active':'')+'" onclick="'+(res?'set({sec:\'compare\'})':'void(0)')+'">🔍 Comparer</button>';
   h+='</div>';
-  // Spinner global (import OU compare en cours de chargement)
   if(status==='loading'){
-    h+='<div class="status"><div class="spin">⏳</div><div style="font-size:15px;font-weight:700;margin-bottom:6px">'+(msg||'Analyse en cours...')+'</div><div style="font-size:12px;color:rgba(240,237,232,.4)">Cela peut prendre quelques secondes...</div></div>';
-    document.getElementById('root').innerHTML=h;bindEvents();return;
-  }
-  if(sec==='import'){
-    if(false){h+='';}
-    else{
-      h+='<div class="drop-zone" id="dz" onclick="document.getElementById(\'fi\').click()"><div style="font-size:36px;margin-bottom:10px">🧾</div><div style="font-size:15px;font-weight:700;margin-bottom:4px">Importer un ticket</div><div style="font-size:12px;color:rgba(240,237,232,.4)">PDF · JPG · PNG · TXT · CSV</div></div>';
-      h+='<input type="file" id="fi" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv" style="display:none">';
-      h+='<div style="text-align:center;color:rgba(240,237,232,.25);font-size:11px;margin:10px 0">— ou —</div>';
-      h+='<textarea id="paste-area" placeholder="Colle ici le texte de ton ticket (ultra rapide ⚡)" style="width:100%;height:100px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:#F0EDE8;padding:10px;font-size:12px;font-family:monospace;resize:none;outline:none" oninput="handlePaste(this.value)"></textarea>';
-      if(msg&&status==='error')h+='<div class="err">⚠️ '+msg+'</div>';
-    }
+    h+='<div class="status"><div class="spin">⏳</div><div style="font-size:14px;font-weight:700;margin-bottom:4px">'+(msg||'Analyse...')+'</div><div style="font-size:12px;color:rgba(240,237,232,.4)">Quelques secondes...</div></div>';
+  }else if(sec==='import'){
+    h+='<div class="drop-zone" id="dz" onclick="document.getElementById(\'fi\').click()"><div style="font-size:36px;margin-bottom:10px">🧾</div><div style="font-size:15px;font-weight:700;margin-bottom:4px">Importer un ticket</div><div style="font-size:12px;color:rgba(240,237,232,.4)">PDF · JPG · PNG · TXT</div></div>';
+    h+='<input type="file" id="fi" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv" style="display:none">';
+    h+='<div style="text-align:center;color:rgba(240,237,232,.25);font-size:11px;margin:10px 0">— ou colle le texte —</div>';
+    h+='<textarea id="ta" placeholder="Colle le texte de ton ticket ici ⚡ (instantané)" style="width:100%;height:90px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;color:#F0EDE8;padding:10px;font-size:12px;font-family:monospace;resize:none;outline:none" oninput="onPaste(this.value)"></textarea>';
+    if(msg&&status==='error')h+='<div class="err">⚠️ '+msg+'</div>';
   }else if(sec==='compare'&&res){
-    const {products,store:st,total,date}=res;
-    const base=products.reduce((a,p)=>a+(p.price*(p.qty||1)),0);
-    h+='<div class="ticket-info"><div><div class="ticket-store">'+(st||'Ticket')+'</div><div class="ticket-meta">'+(date?'Le '+date+' · ':'')+products.length+' articles</div></div><div class="ticket-total">'+( total||base).toFixed(2)+' €</div></div>';
+    const {products:prods,store:st,total,date}=res;
+    const base=prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0);
+    h+='<div class="ticket-info"><div><div class="ticket-store">'+(st||'Ticket importé')+'</div><div class="ticket-meta">'+(date?'Le '+date+' · ':'')+prods.length+' articles</div></div><div class="ticket-total">'+( total||base).toFixed(2)+' €</div></div>';
     h+='<div class="sec-title">CHOISIR UNE ENSEIGNE</div>';
-    const ea=emAmt(products),es=emSave(products);
-    h+='<div class="ecomix '+(store==='ecomix'?'sel':'')+'" onclick="set({store:\'ecomix\'})"><div style="display:flex;align-items:center;gap:12px"><div style="font-size:24px">🌿</div><div><div class="em-name">Eco-Mix</div><div class="em-sub">Chaque produit dans l\'enseigne la moins chère</div></div></div><div style="text-align:right"><div class="em-amt">'+ea.toFixed(2)+' €</div><div class="em-save">-'+es.toFixed(2)+' € économisés</div></div></div>';
+    const ea=emAmt(prods),es=emSave(prods);
+    h+='<div class="ecomix '+(store==='ecomix'?'sel':'')+'" onclick="set({store:\'ecomix\'})"><div style="display:flex;align-items:center;gap:12px"><div style="font-size:24px">🌿</div><div><div class="em-name">Eco-Mix</div><div class="em-sub">Chaque produit chez le moins cher</div></div></div><div style="text-align:right"><div class="em-amt">'+ea.toFixed(2)+' €</div><div class="em-save">-'+es.toFixed(2)+' € eco.</div></div></div>';
     h+='<div class="stores-grid">';
     STORES.forEach(s=>{
-      const ep=est(products,s.id);
+      const ep=est(prods,s.id);
       h+='<div class="store-card '+(store===s.id?'sel':'')+'" style="--sc:'+s.color+'" onclick="set({store:\''+s.id+'\'})">'+
         (s.cheap?'<div class="cheap-badge">LE + BAS</div>':'')+
         '<div class="store-icon" style="background:'+s.color+'22;color:'+s.color+'">'+s.letter+'</div>'+
@@ -202,19 +219,15 @@ function render(){
     if(store&&store!=='ecomix'){
       const s=STORES.find(x=>x.id===store);
       const cfg=DRIVE[store];
-      if(cfg){
-        h+='<div class="login-notice"><div class="login-title">🔐 Avant de démarrer</div><div class="login-sub">'+cfg.note+'</div></div>';
-        h+='<button class="btn-cart" style="background:'+s.color+'" onclick="startCart(\''+store+'\','+JSON.stringify(products)+')">🛒 Démarrer le panier automatique ('+products.length+' produits)</button>';
-      }
+      if(cfg)h+='<div class="login-notice"><div class="login-title">🔐 Avant de démarrer</div><div class="login-sub">'+cfg.note+'</div></div><button class="btn-cart" style="background:'+s.color+'" onclick="startCart(\''+store+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier ('+prods.length+' produits)</button>';
       h+='<div class="products">';
-      products.forEach(p=>{
-        h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+((p.price||0)*(p.qty||1)).toFixed(2)+' €</div></div>';
-      });
+      prods.forEach(p=>{h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+((p.price||0)*(p.qty||1)).toFixed(2)+' €</div></div>';});
       h+='</div>';
     }
   }
   document.getElementById('root').innerHTML=h;
-  const fi=document.getElementById('fi');const dz=document.getElementById('dz');
+  const fi=document.getElementById('fi');
+  const dz=document.getElementById('dz');
   if(fi)fi.onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);};
   if(dz){dz.ondragover=e=>{e.preventDefault();dz.style.borderColor='#5BF5A8';};dz.ondragleave=()=>{dz.style.borderColor='';};dz.ondrop=e=>{e.preventDefault();dz.style.borderColor='';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);};}
 }
