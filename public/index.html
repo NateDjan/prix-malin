@@ -165,7 +165,7 @@ function render(){
     h+='<div class="ticket-info"><div><div class="ticket-store">'+(st||'Ticket')+'</div><div class="ticket-meta">'+(date?'Le '+date+' · ':'')+products.length+' articles</div></div><div class="ticket-total">'+( total||base).toFixed(2)+' €</div></div>';
     h+='<div class="sec-title">CHOISIR UNE ENSEIGNE</div>';
     const ea=emAmt(products),es=emSave(products);
-    h+='<div class="ecomix '+(store==='ecomix'?'sel':'')+'" onclick="set({store:\'ecomix\'})"><div style="display:flex;align-items:center;gap:12px"><div style="font-size:24px">🌿</div><div><div class="em-name">Eco-Mix</div><div class="em-sub">Chaque produit dans l'enseigne la moins chère</div></div></div><div style="text-align:right"><div class="em-amt">'+ea.toFixed(2)+' €</div><div class="em-save">-'+es.toFixed(2)+' € économisés</div></div></div>';
+    h+='<div class="ecomix '+(store==='ecomix'?'sel':'')+'" onclick="set({store:\'ecomix\'})"><div style="display:flex;align-items:center;gap:12px"><div style="font-size:24px">🌿</div><div><div class="em-name">Eco-Mix</div><div class="em-sub">Chaque produit dans l\'enseigne la moins chère</div></div></div><div style="text-align:right"><div class="em-amt">'+ea.toFixed(2)+' €</div><div class="em-save">-'+es.toFixed(2)+' € économisés</div></div></div>';
     h+='<div class="stores-grid">';
     STORES.forEach(s=>{
       const ep=est(products,s.id);
