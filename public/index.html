@@ -72,7 +72,7 @@ const STORES=[{id:'leclerc',name:'E.Leclerc',color:'#0052CC',letter:'E',factor:1
 const DRIVE={leclerc:{name:'E.Leclerc Drive',url:q=>'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche='+encodeURIComponent(q),ms:3500,note:'Connecte-toi sur fd3-courses.leclercdrive.fr (Rueil-Malmaison)'},carrefour:{name:'Carrefour',url:q=>'https://www.carrefour.fr/s?q='+encodeURIComponent(q)+'&ref=search',ms:4000,note:'Connecte-toi sur carrefour.fr avant de démarrer'},intermarche:{name:'Intermarché',url:q=>'https://www.intermarche.com/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur intermarche.com avant de démarrer'},auchan:{name:'Auchan',url:q=>'https://www.auchan.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur auchan.fr avant de démarrer'},monoprix:{name:'Monoprix',url:q=>'https://www.monoprix.fr/recherche/'+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur monoprix.fr avant de démarrer'},lidl:{name:'Lidl',url:q=>'https://www.lidl.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Disponible en livraison sur lidl.fr'}};
 const FP='Extrait les produits. JSON uniquement: {"products":[{"original":"","search":"","qty":1,"price":0}],"store":"","total":0,"date":""}';
 const SYS='Reponds uniquement avec du JSON valide, sans markdown.';
-let S={catId:'food',sec:'import',status:'idle',msg:'',results:{},store:null};
+let S={catId:'food',sec:'import',status:'idle',msg:'',results:{},store:null,cp:localStorage.getItem('prix_malin_cp')||'',realPrices:{}};
 function set(p){
   Object.assign(S,p);
   render();
@@ -143,7 +143,19 @@ async function analyzeText(text){
 
     const results={...S.results};
     results[S.catId]={products,store,total,date};
+    // Demander code postal si absent
+    if(!S.cp) {
+      const cp = prompt('Votre code postal (pour les prix de votre région) :','92410');
+      if(cp) { S.cp = cp; localStorage.setItem('prix_malin_cp', cp); }
+    }
     set({status:'done',results,msg:'',store:null,sec:'compare'});
+    // Fetch vrais prix en arrière-plan
+    if(S.cp) {
+      fetchRealPrices(res.products, S.cp).then(rp => {
+        S.realPrices = {...S.realPrices, ...rp};
+        render();
+      });
+    }
   }catch(e){
     set({status:'error',msg:e.message,sec:'import'});
   }
@@ -190,6 +202,32 @@ async function handleFile(f){
   }
 }
 function onPaste(v){ /* auto-analyse désactivée - bouton uniquement */ }
+
+async function fetchRealPrices(products, cp) {
+  if(!cp || !products?.length) return {};
+  const prices = {};
+  // Prendre les 5 premiers produits les plus chers (les plus significatifs)
+  const topProds = [...products].sort((a,b)=>((b.price||0)*(b.qty||1))-((a.price||0)*(a.qty||1))).slice(0,5);
+  await Promise.all(topProds.map(async p => {
+    try {
+      const r = await fetch('/api/prix?q='+encodeURIComponent(p.search)+'&cp='+encodeURIComponent(cp));
+      const d = await r.json();
+      if(d.prices) prices[p.search] = d.prices;
+    } catch(e) {}
+  }));
+  return prices;
+}
+
+function calcStoreTotalReal(products, storeId, realPrices) {
+  let total = 0;
+  let found = 0;
+  products.forEach(p => {
+    const storePrice = realPrices[p.search]?.[storeId];
+    if(storePrice != null) { total += storePrice * (p.qty||1); found++; }
+    else { total += (p.price||0) * (p.qty||1) * (STORES.find(s=>s.id===storeId)?.factor||1); }
+  });
+  return { total: +total.toFixed(2), realCount: found, totalCount: products.length };
+}
 function est(prods,sid){const s=STORES.find(x=>x.id===sid);if(!s)return 0;return +(prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*s.factor).toFixed(2);}
 function emAmt(prods){return +(prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*Math.min(...STORES.map(s=>s.factor))).toFixed(2);}
 function emSave(prods){const base=prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0);return +(base*(STORES.reduce((a,s)=>a+s.factor,0)/STORES.length-Math.min(...STORES.map(s=>s.factor)))).toFixed(2);}
@@ -275,7 +313,12 @@ function render(){
       const cfg=DRIVE[store];
       if(cfg)h+='<div class="login-notice"><div class="login-title">🔐 Avant de démarrer</div><div class="login-sub">'+cfg.note+'</div></div><button class="btn-cart" style="background:'+s.color+'" onclick="startCart(\''+store+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier ('+prods.length+' produits)</button>';
       h+='<div class="products">';
-      prods.forEach(p=>{h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+((p.price||0)*(p.qty||1)).toFixed(2)+' €</div></div>';});
+      prods.forEach(p=>{
+        const storeId = S.store && S.store!=='ecomix' ? S.store : 'leclerc';
+        const rp = S.realPrices[p.search]?.[storeId];
+        const priceDisplay = rp != null ? rp.toFixed(2) + ' €' : ((p.price||0)*(p.qty||1)).toFixed(2) + ' € ~';
+        h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+priceDisplay+'</div></div>';
+      });
       h+='</div>';
     }
   }
