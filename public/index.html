@@ -193,7 +193,19 @@ async function startCart(sid,prods){
   if(_run)return;_run=true;
   const cfg=DRIVE[sid];if(!cfg){alert('Non configure');_run=false;return;}
   prog(prods,0,cfg.name);
-  for(let i=0;i<prods.length;i++){prog(prods,i,cfg.name);window.open(cfg.url(prods[i].search),'_cart');await new Promise(r=>setTimeout(r,cfg.ms));}
+  // Ouvrir l'onglet Drive une seule fois puis naviguer dedans
+  const cartWin = window.open(cfg.url(prods[0].search), 'prix_malin_cart');
+  await new Promise(r=>setTimeout(r,cfg.ms));
+  for(let i=1;i<prods.length;i++){
+    if(!_run)break;
+    prog(prods,i,cfg.name);
+    if(cartWin && !cartWin.closed){
+      cartWin.location.href = cfg.url(prods[i].search);
+    } else {
+      window.open(cfg.url(prods[i].search),'prix_malin_cart');
+    }
+    await new Promise(r=>setTimeout(r,cfg.ms));
+  }
   prog(prods,prods.length,cfg.name);_run=false;
 }
 function prog(prods,cur,name){
@@ -240,7 +252,18 @@ function render(){
         '<div style="font-size:11px;color:rgba(240,237,232,.35);margin-top:2px">estimation</div></div>';
     });
     h+='</div>';
-    if(store&&store!=='ecomix'){
+    if(store==='ecomix'){
+      // Eco-Mix: montrer chaque produit avec l'enseigne la moins chère
+      const bestStore = STORES.reduce((a,b)=>a.factor<b.factor?a:b);
+      h+='<div class="login-notice"><div class="login-title">🌿 Eco-Mix — meilleurs prix</div><div class="login-sub">Connecte-toi sur chaque site avant de démarrer le panier.</div></div>';
+      h+='<button class="btn-cart" style="background:linear-gradient(135deg,#5BF5A8,#00C97A);color:#0A0A0F" onclick="startCart(\''+bestStore.id+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier Eco-Mix ('+prods.length+' produits)</button>';
+      h+='<div class="products">';
+      prods.forEach(p=>{
+        const pBest=STORES.reduce((a,b)=>a.factor<b.factor?a:b);
+        h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig" style="color:'+pBest.color+'">'+pBest.name+'</div></div><div class="p-price">'+((p.price||0)*(p.qty||1)*pBest.factor).toFixed(2)+' €</div></div>';
+      });
+      h+='</div>';
+    } else if(store&&store!=='ecomix'){
       const s=STORES.find(x=>x.id===store);
       const cfg=DRIVE[store];
       if(cfg)h+='<div class="login-notice"><div class="login-title">🔐 Avant de démarrer</div><div class="login-sub">'+cfg.note+'</div></div><button class="btn-cart" style="background:'+s.color+'" onclick="startCart(\''+store+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier ('+prods.length+' produits)</button>';
