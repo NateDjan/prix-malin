@@ -457,9 +457,10 @@ function renderFood(){
       </a>`;
     });
     h+=`</div>`;
-    h+=`<div class="login-notice" style="background:rgba(91,245,168,.06);border:1px solid rgba(91,245,168,.2);border-radius:13px;padding:12px 14px;margin-bottom:8px">
-      <div style="font-size:13px;font-weight:700;color:#5BF5A8;margin-bottom:4px">🔐 Avant de démarrer</div>
-      <div style="font-size:12px;color:rgba(240,237,232,.6);line-height:1.6">Assure-toi d'être connecté(e) sur <strong style="color:#F0EDE8">${active.name}</strong> dans ton navigateur, puis clique sur Démarrer.</div>
+    const _driveCfg = DRIVE_CONFIG[active.id];
+    h+=`<div style="background:rgba(91,245,168,.06);border:1px solid rgba(91,245,168,.2);border-radius:13px;padding:12px 14px;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:700;color:#5BF5A8;margin-bottom:6px">🔐 Avant de démarrer</div>
+      <div style="font-size:12px;color:rgba(240,237,232,.65);line-height:1.7">${_driveCfg ? _driveCfg.note : "Connecte-toi sur le site de l'enseigne dans ton navigateur"}</div>
     </div>
     <button class="btn-panier" style="background:${active.color};color:#0A0A0F" onclick="startAutoCart(${JSON.stringify(active)},${JSON.stringify(products)})">
       🛒 Démarrer le panier automatique (${products.length} produits)
