@@ -199,8 +199,7 @@ function set(p){Object.assign(S,p);render();}
 
 // ── Appel API via proxy ────────────────────────────────────────────────────────
 const SYS="Réponds UNIQUEMENT avec du JSON valide, sans texte avant ni après, sans backticks.";
-const FOOD_P=`Analyse ce ticket de caisse. Pour chaque produit donne un nom court adapté à une recherche supermarché.
-JSON: {"products":[{"original":"texte ticket","search":"nom recherche","qty":1,"price":0.00}],"store":"magasin si visible","total":0.00,"date":"date si visible"}`;
+const FOOD_P="Liste les produits de ce ticket en JSON: {products:[{original:string,search:string,qty:number,price:number}],store:string,total:number,date:string}. Réponds UNIQUEMENT avec le JSON.";
 function objP(c){
   const d={tech:"produit tech (marque, modèle exact)",home:"objet maison/déco (marque, modèle)",fashion:"vêtement/accessoire (marque, type, couleur)",sport:"article sport (marque, modèle)",beauty:"produit beauté (marque, nom, contenance)"};
   return `Identifie précisément ce ${d[c]||"produit"}. Donne un nom de recherche optimal pour trouver le meilleur prix.
