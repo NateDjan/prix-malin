@@ -298,9 +298,10 @@ function render(){
       if(cfg)h+='<div class="login-notice"><div class="login-title">🔐 Avant de démarrer</div><div class="login-sub">'+cfg.note+'</div></div><button class="btn-cart" style="background:'+s.color+'" onclick="startCart(\''+store+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier ('+prods.length+' produits)</button>';
       h+='<div class="products">';
       prods.forEach(p=>{
-        const storeId = S.store && S.store!=='ecomix' ? S.store : 'leclerc';
-        const rp = S.realPrices[p.search]?.[storeId];
-        const priceDisplay = rp != null ? rp.toFixed(2) + ' €' : ((p.price||0)*(p.qty||1)).toFixed(2) + ' € ~';
+        const storeId=S.store&&S.store!=='ecomix'?S.store:'leclerc';
+        const rpKey=Object.keys(S.realPrices).find(k=>k===p.search||p.search.startsWith(k)||k.startsWith(p.search.split(' ').slice(0,2).join(' ')));
+        const rp=rpKey?S.realPrices[rpKey]?.[storeId]:null;
+        const priceDisplay=rp!=null?rp.toFixed(2)+' €':((p.price||0)*(p.qty||1)).toFixed(2)+' €';
         h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+priceDisplay+'</div></div>';
       });
       h+='</div>';
