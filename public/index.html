@@ -251,7 +251,7 @@ function render(){
     h+='</div>';
     if(store==='ecomix'){
       const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b);
-      h+='<div class="login-notice"><div class="login-title">🌿 Eco-Mix</div><div class="login-sub">Chaque produit acheté dans l'enseigne la moins chère.</div></div>';
+      h+='<div class="login-notice"><div class="login-title">🌿 Eco-Mix</div><div class="login-sub">Chaque produit achet\u00e9 dans l\'enseigne la moins ch\u00e8re.</div></div>';
       h+='<button class="btn-cart" style="background:linear-gradient(135deg,#5BF5A8,#00C97A);color:#0A0A0F" onclick="startCart(\''+bestS.id+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier Eco-Mix ('+prods.length+' produits)</button>';
       h+='<div class="products">';
       prods.forEach(p=>{
