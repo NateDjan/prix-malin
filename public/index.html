@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Prix Malin</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{background:#0A0A0F;color:#F0EDE8;font-family:'DM Sans',sans-serif;min-height:100vh}
@@ -272,30 +273,27 @@ function b64buf(buf){
 
 // ── Analyse ────────────────────────────────────────────────────────────────────
 
-// Extraction texte PDF côté client (évite le timeout)
-async function extractPdfText(arrayBuffer) {
+// Extraction texte PDF avec pdf.js (rapide, côté client)
+async function extractPdfWithPdfJs(arrayBuffer) {
   try {
-    // Lire le PDF comme texte brut - chercher les chaînes lisibles
-    const bytes = new Uint8Array(arrayBuffer);
-    let text = "";
-    let inString = false;
-    let current = "";
-    for(let i = 0; i < bytes.length; i++) {
-      const c = bytes[i];
-      if(c === 40) { inString = true; current = ""; } // '('
-      else if(c === 41 && inString) { // ')'
-        inString = false;
-        if(current.length > 2 && /[a-zA-Z0-9éèàùâêîôûäëïöü€.,;:!? ]{3,}/.test(current)) {
-          text += current + " ";
-        }
-        current = "";
-      } else if(inString) {
-        if(c >= 32 && c < 127) current += String.fromCharCode(c);
-        else if(c > 127) current += String.fromCharCode(c); // UTF chars
-      }
+    if(typeof pdfjsLib === 'undefined') {
+      // fallback si pdf.js pas chargé
+      return "";
     }
-    return text.slice(0,12000);
-  } catch(e) { return ""; }
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+    let fullText = "";
+    for(let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(' ');
+      fullText += pageText + "\n";
+    }
+    return fullText;
+  } catch(e) {
+    console.error("pdf.js error:", e);
+    return "";
+  }
 }
 
 async function analyze(){
