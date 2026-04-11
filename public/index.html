@@ -91,7 +91,7 @@ async function pdfText(buf){
 function toB64(buf){const b=new Uint8Array(buf);let s='';for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s);}
 async function analyze(){
   if(!S.file){set({msg:'Aucun fichier'});return;}
-  set({status:'loading',msg:'Extraction...',sec:'compare'});
+  set({status:'loading',msg:'Extraction du ticket...',sec:'compare'});
   try{
     let msgs;
     if(S.file.type==='pdf'){
@@ -108,7 +108,7 @@ async function analyze(){
     if(!res.products?.length)throw new Error('Aucun produit trouvé');
     const results={...S.results};results[S.catId]=res;
     set({status:'done',results,msg:'',store:null,sec:'compare'});
-  }catch(e){set({status:'error',msg:e.message,sec:'import'});}
+  }catch(e){set({status:'error',msg:e.message,sec: Object.keys(S.results).length>0 ? 'compare' : 'import'});}
 }
 async function handleFile(f){
   const ext=f.name.split('.').pop().toLowerCase();
@@ -152,8 +152,13 @@ function render(){
   h+='<button class="sec-btn '+(sec==='import'?'active':'')+'" onclick="set({sec:\'import\'})">📥 Importer</button>';
   h+='<button class="sec-btn '+(sec==='compare'&&res?'active':'')+'" onclick="'+(res?'set({sec:\'compare\'})':'void(0)')+'">🔍 Comparer</button>';
   h+='</div>';
+  // Spinner global (import OU compare en cours de chargement)
+  if(status==='loading'){
+    h+='<div class="status"><div class="spin">⏳</div><div style="font-size:15px;font-weight:700;margin-bottom:6px">'+(msg||'Analyse en cours...')+'</div><div style="font-size:12px;color:rgba(240,237,232,.4)">Cela peut prendre quelques secondes...</div></div>';
+    document.getElementById('root').innerHTML=h;bindEvents();return;
+  }
   if(sec==='import'){
-    if(status==='loading'){h+='<div class="status"><div class="spin">⏳</div><div style="color:rgba(240,237,232,.6)">'+(msg||'Analyse...')+'</div></div>';}
+    if(false){h+='';}
     else{
       h+='<div class="drop-zone" id="dz" onclick="document.getElementById(\'fi\').click()"><div style="font-size:40px;margin-bottom:12px">🧾</div><div style="font-size:16px;font-weight:700;margin-bottom:6px">Importer un ticket</div><div style="font-size:12px;color:rgba(240,237,232,.4)">PDF · JPG · PNG · TXT · CSV</div></div>';
       h+='<input type="file" id="fi" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv" style="display:none">';
