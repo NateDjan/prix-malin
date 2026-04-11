@@ -215,19 +215,21 @@ function xJSON(t){
   throw new Error("JSON introuvable");
 }
 
+// Cache clé API
+let _cachedKey=null;
+async function getKey(){if(_cachedKey)return _cachedKey;const r=await fetch("/api/key");const d=await r.json();_cachedKey=d.k;return _cachedKey;}
+
 async function callAI(messages,maxTokens=2000){
-  const res=await fetch(API_URL,{
+  const key=await getKey();
+  const res=await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
-    headers:{"Content-Type":"application/json"},
+    headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:maxTokens,system:SYS,messages}),
   });
-  const raw=await res.text();
-  let data;
-  try{data=JSON.parse(raw);}catch(e){throw new Error("Réponse proxy invalide: "+raw.slice(0,100));}
-  if(!res.ok) throw new Error("Erreur "+(data?.error?.message||res.status));
-  if(data.stop_reason==="max_tokens") throw new Error("MAX_TOKENS");
-  const txt=data.content?.find(b=>b.type==="text")?.text||"";
-  return xJSON(txt);
+  const data=await res.json();
+  if(!res.ok)throw new Error(data?.error?.message||res.status);
+  if(data.stop_reason==="max_tokens")throw new Error("MAX_TOKENS");
+  return xJSON(data.content?.find(b=>b.type==="text")?.text||"");
 }
 
 async function callWithRetry(messages){
