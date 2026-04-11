@@ -189,12 +189,7 @@ async function handleFile(f){
     await analyzeText(text);
   }
 }
-let _pt=null;
-function onPaste(v){
-  clearTimeout(_pt);
-  if(v.trim().length<10)return;
-  _pt=setTimeout(()=>analyzeText(v),3000);
-}
+function onPaste(v){ /* auto-analyse désactivée - bouton uniquement */ }
 function est(prods,sid){const s=STORES.find(x=>x.id===sid);if(!s)return 0;return +(prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*s.factor).toFixed(2);}
 function emAmt(prods){return +(prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*Math.min(...STORES.map(s=>s.factor))).toFixed(2);}
 function emSave(prods){const base=prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0);return +(base*(STORES.reduce((a,s)=>a+s.factor,0)/STORES.length-Math.min(...STORES.map(s=>s.factor)))).toFixed(2);}
