@@ -70,7 +70,7 @@ h1{font-size:22px;font-weight:900;text-align:center;padding:20px 0 4px}
 const CATS=[{id:'food',icon:'🥦',label:'Alimentaire'},{id:'tech',icon:'💻',label:'Tech'},{id:'home',icon:'🏠',label:'Maison'},{id:'fashion',icon:'👗',label:'Mode'},{id:'sport',icon:'⚽',label:'Sport'},{id:'beauty',icon:'💄',label:'Beauté'}];
 const STORES=[{id:'leclerc',name:'E.Leclerc',color:'#0052CC',letter:'E',factor:1.00},{id:'carrefour',name:'Carrefour',color:'#003DA5',letter:'C',factor:1.08},{id:'intermarche',name:'Intermarché',color:'#E31E24',letter:'I',factor:1.04},{id:'lidl',name:'Lidl',color:'#FFC61E',letter:'L',factor:0.95,cheap:true},{id:'auchan',name:'Auchan',color:'#E31E24',letter:'A',factor:1.06},{id:'monoprix',name:'Monoprix',color:'#E63946',letter:'M',factor:1.22}];
 const DRIVE={leclerc:{name:'E.Leclerc Drive',url:q=>'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche='+encodeURIComponent(q),ms:3500,note:'Connecte-toi sur fd3-courses.leclercdrive.fr · Rueil-Malmaison'},carrefour:{name:'Carrefour',url:q=>'https://www.carrefour.fr/s?q='+encodeURIComponent(q)+'&ref=search',ms:4000,note:'Connecte-toi sur carrefour.fr avant de démarrer'},intermarche:{name:'Intermarché',url:q=>'https://www.intermarche.com/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur intermarche.com avant de démarrer'},auchan:{name:'Auchan',url:q=>'https://www.auchan.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur auchan.fr avant de démarrer'},monoprix:{name:'Monoprix',url:q=>'https://www.monoprix.fr/recherche/'+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur monoprix.fr avant de démarrer'},lidl:{name:'Lidl',url:q=>'https://www.lidl.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Disponible en livraison sur lidl.fr'}};
-const FP='Extrait tous les produits de ce ticket. Réponds UNIQUEMENT avec ce JSON:\n{"products":[{"original":"nom ticket","search":"nom recherche","qty":1,"price":0.00}],"store":"magasin","total":0.00,"date":"date"}';
+const FP='JSON only: {"products":[{"original":"","search":"","qty":1,"price":0}],"store":"","total":0,"date":""}. Liste tous les produits du ticket.';
 const SYS='Tu extrais des données de tickets de caisse. Réponds uniquement avec du JSON valide.';
 let S={catId:'food',sec:'import',file:null,status:'idle',msg:'',results:{},store:null};
 function set(p){Object.assign(S,p);render();}
@@ -78,7 +78,7 @@ let _key=null;
 async function getKey(){if(_key)return _key;try{const r=await fetch('/api/key');const d=await r.json();_key=d.k;return _key;}catch(e){return '';}}
 async function callAI(msgs,n=4000){
   const k=await getKey();if(!k)throw new Error('Clé API indisponible');
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:n,system:SYS,messages:msgs})});
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:n,system:SYS,messages:msgs})});
   const d=await r.json();if(!r.ok)throw new Error(d?.error?.message||'Erreur '+r.status);
   if(d.stop_reason==='max_tokens')throw new Error('MAX_TOKENS');
   const t=d.content?.find(b=>b.type==='text')?.text||'';
@@ -96,15 +96,15 @@ async function analyze(){
     let msgs;
     if(S.file.type==='pdf'){
       const txt=await pdfText(S.file.data);
-      if(txt&&txt.length>50){msgs=[{role:'user',content:txt.slice(0,15000)+'\n\n'+FP}];}
-      else{msgs=[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:toB64(S.file.data)}},{type:'text',text:FP}]}];}
+      // PDF image: envoyer directement en base64 (pdf.js ne peut pas lire les PDF scannés)
+      msgs=[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:toB64(S.file.data)}},{type:'text',text:FP}]}];
     }else if(S.file.type==='img'){
       msgs=[{role:'user',content:[{type:'image',source:{type:'base64',media_type:S.file.mime,data:S.file.b64}},{type:'text',text:FP}]}];
     }else{
       msgs=[{role:'user',content:S.file.text+'\n\n'+FP}];
     }
     set({msg:'Analyse en cours...'});
-    const res=await callAI(msgs,4000);
+    const res=await callAI(msgs,2000);
     if(!res.products?.length)throw new Error('Aucun produit trouvé');
     const results={...S.results};results[S.catId]=res;
     set({status:'done',results,msg:'',store:null,sec:'compare'});
