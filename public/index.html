@@ -94,6 +94,8 @@ body{background:#0A0A0F;color:#F0EDE8;font-family:'DM Sans',sans-serif;min-heigh
 .disc{padding:10px;font-size:10px;color:rgba(240,237,232,.15);text-align:center;border-top:1px solid rgba(255,255,255,.04)}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .fu{animation:fadeUp .3s ease both}
+.btn-panier{width:100%;padding:14px;border-radius:13px;border:none;font-family:'Syne',sans-serif;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .2s}
+.btn-panier:hover{opacity:.83}
 </style>
 </head>
 <body>
@@ -454,7 +456,9 @@ function renderFood(){
         <span style="font-size:11px;color:rgba(240,237,232,.3)">→</span>
       </a>`;
     });
-    h+=`</div><div style="font-size:11px;color:rgba(240,237,232,.28);padding:4px">💡 Prix géolocalisés sur Quiestlemoinscher.com</div>`;
+    h+=`</div>`;
+    h+=`<button class="btn-panier" style="background:${active.color};color:#0A0A0F" onclick="openAllTabs(${JSON.stringify(active)},${JSON.stringify(products)})">🛒 Ouvrir les ${products.length} produits dans des onglets</button>`;
+    h+=`<div style="font-size:11px;color:rgba(240,237,232,.28);padding:4px">💡 Un onglet par produit · tu n'as qu'à cliquer Ajouter au panier</div>`;
     setTimeout(()=>products.forEach((p,i)=>{
       const el=document.getElementById("pt"+i);if(!el)return;
       fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(p.search.split(" ").slice(0,3).join(" "))}&search_simple=1&action=process&json=1&page_size=1&fields=image_small_url`)
