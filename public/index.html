@@ -69,177 +69,140 @@ h1{font-size:22px;font-weight:900;text-align:center;padding:20px 0 4px}
 <script>
 const CATS=[{id:'food',icon:'🥦',label:'Alimentaire'},{id:'tech',icon:'💻',label:'Tech'},{id:'home',icon:'🏠',label:'Maison'},{id:'fashion',icon:'👗',label:'Mode'},{id:'sport',icon:'⚽',label:'Sport'},{id:'beauty',icon:'💄',label:'Beauté'}];
 const STORES=[{id:'leclerc',name:'E.Leclerc',color:'#0052CC',letter:'E',factor:1.00},{id:'carrefour',name:'Carrefour',color:'#003DA5',letter:'C',factor:1.08},{id:'intermarche',name:'Intermarché',color:'#E31E24',letter:'I',factor:1.04},{id:'lidl',name:'Lidl',color:'#FFC61E',letter:'L',factor:0.95,cheap:true},{id:'auchan',name:'Auchan',color:'#E31E24',letter:'A',factor:1.06},{id:'monoprix',name:'Monoprix',color:'#E63946',letter:'M',factor:1.22}];
-const DRIVE={leclerc:{name:'E.Leclerc Drive',url:q=>'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche='+encodeURIComponent(q),ms:3500,note:'Connecte-toi sur fd3-courses.leclercdrive.fr (Rueil-Malmaison)'},carrefour:{name:'Carrefour',url:q=>'https://www.carrefour.fr/s?q='+encodeURIComponent(q)+'&ref=search',ms:4000,note:'Connecte-toi sur carrefour.fr avant de démarrer'},intermarche:{name:'Intermarché',url:q=>'https://www.intermarche.com/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur intermarche.com avant de démarrer'},auchan:{name:'Auchan',url:q=>'https://www.auchan.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur auchan.fr avant de démarrer'},monoprix:{name:'Monoprix',url:q=>'https://www.monoprix.fr/recherche/'+encodeURIComponent(q),ms:4000,note:'Connecte-toi sur monoprix.fr avant de démarrer'},lidl:{name:'Lidl',url:q=>'https://www.lidl.fr/recherche?q='+encodeURIComponent(q),ms:4000,note:'Disponible en livraison sur lidl.fr'}};
-const FP='Extrait les produits. JSON uniquement: {"products":[{"original":"","search":"","qty":1,"price":0}],"store":"","total":0,"date":""}';
+const DRIVE={leclerc:{name:'E.Leclerc Drive',url:q=>'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche='+encodeURIComponent(q),note:'Connecte-toi sur fd3-courses.leclercdrive.fr'},carrefour:{name:'Carrefour',url:q=>'https://www.carrefour.fr/s?q='+encodeURIComponent(q)+'&ref=search',note:'Connecte-toi sur carrefour.fr avant de démarrer'},intermarche:{name:'Intermarché',url:q=>'https://www.intermarche.com/recherche?q='+encodeURIComponent(q),note:'Connecte-toi sur intermarche.com avant de démarrer'},auchan:{name:'Auchan',url:q=>'https://www.auchan.fr/recherche?q='+encodeURIComponent(q),note:'Connecte-toi sur auchan.fr avant de démarrer'},monoprix:{name:'Monoprix',url:q=>'https://www.monoprix.fr/recherche/'+encodeURIComponent(q),note:'Connecte-toi sur monoprix.fr avant de démarrer'},lidl:{name:'Lidl',url:q=>'https://www.lidl.fr/recherche?q='+encodeURIComponent(q),note:'Disponible sur lidl.fr'}};
+const FP='Extrait les produits. JSON uniquement sans markdown: {"products":[{"original":"","search":"","qty":1,"price":0}],"store":"","total":0,"date":""}';
 const SYS='Reponds uniquement avec du JSON valide, sans markdown.';
+
 let S={catId:'food',sec:'import',status:'idle',msg:'',results:{},store:null,cp:localStorage.getItem('prix_malin_cp')||'',realPrices:{}};
-function set(p){
-  Object.assign(S,p);
-  render();
-  // Scroller vers la liste si on vient de choisir une enseigne
-  if(p.store !== undefined) {
-    setTimeout(()=>{
-      const el = document.querySelector('.login-notice') || document.querySelector('.products') || document.querySelector('.btn-cart');
-      if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
-    }, 50);
-  }
-}
+let _taVal='';
+
+function set(p){Object.assign(S,p);render();}
+
 let _key=null;
-async function getKey(){
-  if(_key)return _key;
-  const r=await fetch('/api/key');
+async function getKey(){if(_key)return _key;const r=await fetch('/api/key');const d=await r.json();_key=d.k;return _key;}
+
+async function callAI(text,b64Pdf){
+  const k=await getKey();
+  let content=b64Pdf?[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64Pdf}},{type:'text',text:FP}]:text+'\n\n'+FP;
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4000,system:SYS,messages:[{role:'user',content}]})});
   const d=await r.json();
-  _key=d.k;
-  return _key;
-}
-async function callAI(text,isB64Pdf){
-  const key=await getKey();
-  let content;
-  if(isB64Pdf){
-    content=[{type:'document',source:{type:'base64',media_type:'application/pdf',data:isB64Pdf}},{type:'text',text:FP}];
-  }else{
-    content=text+'\n\n'+FP;
-  }
-  const r=await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4000,system:SYS,messages:[{role:'user',content}]}),
-  });
-  const data=await r.json();
-  if(!r.ok)throw new Error(data?.error?.message||'Erreur API '+r.status);
-  const txt=data.content?.[0]?.text||'';
-  const m=txt.match(/\{[\s\S]*\}/);
-  if(!m)throw new Error('Pas de JSON: '+txt.slice(0,100));
+  if(!r.ok)throw new Error(d?.error?.message||'Erreur API');
+  const t=d.content?.find(b=>b.type==='text')?.text||'';
+  const m=t.match(/\{[\s\S]*\}/);if(!m)throw new Error('Pas de JSON');
   return JSON.parse(m[0]);
 }
+
 function toB64(buf){const b=new Uint8Array(buf);let s='';for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s);}
+
 async function analyzeText(text){
   set({status:'loading',msg:'Analyse en cours...',sec:'compare'});
   try{
-    const lines = text.trim().split('\n').filter(l=>l.trim());
-    let products = [], store='', total=0, date='';
-    if(lines.length <= 30){
-      const res = await callAI(text, null);
-      if(!res.products?.length) throw new Error('Aucun produit trouve');
-      products = res.products; store = res.store; total = res.total; date = res.date;
-    } else {
-      const mid = Math.floor(lines.length/2);
-      const [r1, r2] = await Promise.all([callAI(lines.slice(0,mid).join('\n'),null), callAI(lines.slice(mid).join('\n'),null)]);
-      products = [...(r1.products||[]), ...(r2.products||[])];
-      store = r1.store || r2.store || ''; total = r1.total || r2.total || 0; date = r1.date || r2.date || '';
-      if(!products.length) throw new Error('Aucun produit trouve');
+    const lines=text.trim().split('\n').filter(l=>l.trim());
+    let products=[],store='',total=0,date='';
+    if(lines.length<=30){
+      const res=await callAI(text,null);
+      if(!res.products?.length)throw new Error('Aucun produit trouvé');
+      products=res.products;store=res.store;total=res.total;date=res.date;
+    }else{
+      const mid=Math.floor(lines.length/2);
+      const [r1,r2]=await Promise.all([callAI(lines.slice(0,mid).join('\n'),null),callAI(lines.slice(mid).join('\n'),null)]);
+      products=[...(r1.products||[]),...(r2.products||[])];
+      store=r1.store||r2.store||'';total=r1.total||r2.total||0;date=r1.date||r2.date||'';
+      if(!products.length)throw new Error('Aucun produit trouvé');
     }
-    const results={...S.results};
-    results[S.catId]={products,store,total,date};
+    const results={...S.results};results[S.catId]={products,store,total,date};
     set({status:'done',results,msg:'',store:null,sec:'compare'});
-    // Fetch vrais prix en arriere-plan si code postal dispo
-    const cp = S.cp || localStorage.getItem('prix_malin_cp') || '';
-    if(cp) {
-      S.cp = cp;
-      fetchRealPrices(products, cp).then(rp => {
-        if(Object.keys(rp).length > 0) { S.realPrices = {...S.realPrices, ...rp}; render(); }
-      });
-    }
-  }catch(e){
-    set({status:'error',msg:e.message,sec:'import'});
-  }
+    // Vrais prix en arriere-plan
+    const cp=S.cp||localStorage.getItem('prix_malin_cp')||'';
+    if(cp){S.cp=cp;fetchRealPrices(products,cp).then(rp=>{if(Object.keys(rp).length>0){S.realPrices={...S.realPrices,...rp};render();}});}
+  }catch(e){set({status:'error',msg:e.message,sec:'import'});}
 }
+
 async function analyzePdf(buf){
   set({status:'loading',msg:'Analyse du ticket...',sec:'compare'});
   try{
-    const b64=toB64(buf);
-    const res=await callAI(null,b64);
-    if(!res.products?.length)throw new Error('Aucun produit trouve');
+    const res=await callAI(null,toB64(buf));
+    if(!res.products?.length)throw new Error('Aucun produit trouvé');
     const results={...S.results};results[S.catId]=res;
     set({status:'done',results,msg:'',store:null,sec:'compare'});
-  }catch(e){
-    set({status:'error',msg:e.message,sec:'import'});
-  }
+    const cp=S.cp||localStorage.getItem('prix_malin_cp')||'';
+    if(cp){fetchRealPrices(res.products,cp).then(rp=>{if(Object.keys(rp).length>0){S.realPrices={...S.realPrices,...rp};render();}});}
+  }catch(e){set({status:'error',msg:e.message,sec:'import'});}
 }
+
 async function handleFile(f){
   const ext=f.name.split('.').pop().toLowerCase();
-  if(ext==='pdf'){
-    const buf=await f.arrayBuffer();
-    await analyzePdf(buf);
-  }else if(['jpg','jpeg','png','webp'].includes(ext)){
-    const r=new FileReader();
-    r.onload=async e=>{
-      const b64=e.target.result.split(',')[1];
+  if(ext==='pdf'){const b=await f.arrayBuffer();await analyzePdf(b);}
+  else if(['jpg','jpeg','png','webp'].includes(ext)){
+    const r=new FileReader();r.onload=async e=>{
       set({status:'loading',msg:'Analyse en cours...',sec:'compare'});
-      try{
-        const key=await getKey();
-        const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:2000,system:SYS,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:f.type,data:b64}},{type:'text',text:FP}]}]})});
-        const data=await resp.json();
-        const txt=data.content?.[0]?.text||'';
-        const m=txt.match(/\{[\s\S]*\}/);
-        if(!m)throw new Error('Pas de JSON');
-        const res=JSON.parse(m[0]);
-        if(!res.products?.length)throw new Error('Aucun produit');
-        const results={...S.results};results[S.catId]=res;
-        set({status:'done',results,msg:'',store:null,sec:'compare'});
-      }catch(e){set({status:'error',msg:e.message,sec:'import'});}
-    };
-    r.readAsDataURL(f);
-  }else{
-    const text=await f.text();
-    await analyzeText(text);
-  }
+      try{const k=await getKey();const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4000,system:SYS,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:f.type,data:e.target.result.split(',')[1]}},{type:'text',text:FP}]}]})});
+      const d=await resp.json();const t=d.content?.find(b=>b.type==='text')?.text||'';const m=t.match(/\{[\s\S]*\}/);if(!m)throw new Error('Pas de JSON');const res=JSON.parse(m[0]);if(!res.products?.length)throw new Error('Aucun produit');
+      const results={...S.results};results[S.catId]=res;set({status:'done',results,msg:'',store:null,sec:'compare'});}catch(e){set({status:'error',msg:e.message,sec:'import'});}
+    };r.readAsDataURL(f);
+  }else{const t=await f.text();await analyzeText(t);}
 }
-function onPaste(v){ /* auto-analyse désactivée - bouton uniquement */ }
 
-async function fetchRealPrices(products, cp) {
-  if(!cp || !products?.length) return {};
-  const prices = {};
-  // Prendre les 5 premiers produits les plus chers (les plus significatifs)
-  const topProds = [...products].sort((a,b)=>((b.price||0)*(b.qty||1))-((a.price||0)*(a.qty||1))).slice(0,5);
-  await Promise.all(topProds.map(async p => {
-    try {
-      const r = await fetch('/api/prix?q='+encodeURIComponent(p.search)+'&cp='+encodeURIComponent(cp));
-      const d = await r.json();
-      if(d.prices) prices[p.search] = d.prices;
-    } catch(e) {}
+async function fetchRealPrices(products,cp){
+  const prices={};
+  const top=[...products].sort((a,b)=>((b.price||0)*(b.qty||1))-((a.price||0)*(a.qty||1))).slice(0,5);
+  await Promise.all(top.map(async p=>{
+    try{const r=await fetch('/api/prix?q='+encodeURIComponent(p.search)+'&cp='+encodeURIComponent(cp));const d=await r.json();if(d.prices)prices[p.search]=d.prices;}catch(e){}
   }));
   return prices;
 }
 
-function calcStoreTotalReal(products, storeId, realPrices) {
-  let total = 0;
-  let found = 0;
-  products.forEach(p => {
-    const storePrice = realPrices[p.search]?.[storeId];
-    if(storePrice != null) { total += storePrice * (p.qty||1); found++; }
-    else { total += (p.price||0) * (p.qty||1) * (STORES.find(s=>s.id===storeId)?.factor||1); }
+function getRealPrice(productSearch,storeId){
+  // Cherche avec correspondance flexible
+  const key=Object.keys(S.realPrices).find(k=>
+    k===productSearch||
+    k.toLowerCase()===productSearch.toLowerCase()||
+    productSearch.toLowerCase().startsWith(k.toLowerCase().split(' ').slice(0,2).join(' '))||
+    k.toLowerCase().startsWith(productSearch.toLowerCase().split(' ').slice(0,2).join(' '))
+  );
+  if(!key)return null;
+  const v=S.realPrices[key]?.[storeId];
+  return typeof v==='number'?v:(typeof v==='string'?parseFloat(v):null);
+}
+
+function calcStoreTotal(prods,storeId){
+  let total=0,realCount=0;
+  prods.forEach(p=>{
+    const rp=getRealPrice(p.search,storeId);
+    if(rp!=null){total+=rp*(p.qty||1);realCount++;}
+    else{const s=STORES.find(x=>x.id===storeId);total+=(p.price||0)*(p.qty||1)*(s?.factor||1);}
   });
-  return { total: +total.toFixed(2), realCount: found, totalCount: products.length };
+  return {total:+total.toFixed(2),realCount,totalCount:prods.length};
 }
-function est(prods,sid){const s=STORES.find(x=>x.id===sid);if(!s)return 0;return +(prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*s.factor).toFixed(2);}
-function emAmt(prods){return +(prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0)*Math.min(...STORES.map(s=>s.factor))).toFixed(2);}
-function emSave(prods){const base=prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0);return +(base*(STORES.reduce((a,s)=>a+s.factor,0)/STORES.length-Math.min(...STORES.map(s=>s.factor)))).toFixed(2);}
+
+function est(prods,sid){const s=STORES.find(x=>x.id===sid);if(!s)return 0;return +(prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0)*s.factor).toFixed(2);}
+function emAmt(prods){return +(prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0)*Math.min(...STORES.map(s=>s.factor))).toFixed(2);}
+function emSave(prods){const base=prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0);return +(base*(STORES.reduce((a,s)=>a+s.factor,0)/STORES.length-Math.min(...STORES.map(s=>s.factor)))).toFixed(2);}
+
 let _run=false;
-function startCart(sid,prods){
-  // Ouvrir le premier produit immédiatement (déclenché par clic utilisateur = pas bloqué)
-  const cfg=DRIVE[sid];
-  if(!cfg){alert('Enseigne non configurée');return;}
-  
-  // Stocker les produits restants et l'index courant
-  window._cartProds = prods;
-  window._cartSid = sid;
-  window._cartIdx = 0;
-  window._cartCfg = cfg;
-  _run = true;
-  
-  prog(prods, 0, cfg.name);
-  
-  // Ouvrir le premier produit - synchrone, déclenché par clic = pas bloqué
-  window.location.href = cfg.url(prods[0].search);
+async function startCart(sid,prods){
+  if(_run)return;_run=true;
+  const cfg=DRIVE[sid];if(!cfg){alert('Non configuré');_run=false;return;}
+  showProg(prods,0,cfg.name);
+  const w=window.open(cfg.url(prods[0].search),'_cart');
+  await new Promise(r=>setTimeout(r,4000));
+  for(let i=1;i<prods.length;i++){
+    if(!_run)break;showProg(prods,i,cfg.name);
+    if(w&&!w.closed)w.location.href=cfg.url(prods[i].search);
+    else window.open(cfg.url(prods[i].search),'_cart');
+    await new Promise(r=>setTimeout(r,4000));
+  }
+  showProg(prods,prods.length,cfg.name);_run=false;
 }
-function prog(prods,cur,name){
+
+function showProg(prods,cur,name){
   let el=document.getElementById('_prog');
   if(!el){el=document.createElement('div');el.id='_prog';el.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#0A0A0F;border-top:2px solid #5BF5A8;padding:14px 20px;z-index:999';document.body.appendChild(el);}
   if(cur>=prods.length){el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#5BF5A8;font-weight:800">✅ '+prods.length+' produits sur '+name+'</span><button onclick="document.getElementById(\'_prog\').remove()" style="background:none;border:1px solid rgba(240,237,232,.2);color:rgba(240,237,232,.4);padding:4px 10px;border-radius:8px;cursor:pointer;font-family:inherit">Fermer</button></div>';return;}
   const pct=Math.round(cur/prods.length*100);
   el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="color:#5BF5A8;font-weight:800;font-size:13px">🛒 '+cur+'/'+prods.length+' · '+name+'</span><button onclick="_run=false;document.getElementById(\'_prog\').remove()" style="background:none;border:1px solid rgba(240,237,232,.2);color:rgba(240,237,232,.4);padding:4px 10px;border-radius:8px;cursor:pointer;font-size:11px;font-family:inherit">Annuler</button></div><div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;margin-bottom:8px"><div style="background:#5BF5A8;height:6px;border-radius:4px;width:'+pct+'%;transition:width .4s"></div></div><div style="font-size:12px;color:rgba(240,237,232,.5)">📦 '+prods[cur].search+'</div>';
 }
+
 function render(){
   const {catId,sec,status,msg,results,store}=S;
   const res=results[catId];
@@ -251,71 +214,83 @@ function render(){
   h+='<button class="sec-btn '+(sec==='import'?'active':'')+'" onclick="set({sec:\'import\'})">📥 Importer</button>';
   h+='<button class="sec-btn '+(sec==='compare'&&res?'active':'')+'" onclick="'+(res?'set({sec:\'compare\'})':'void(0)')+'">🔍 Comparer</button>';
   h+='</div>';
+
   if(status==='loading'){
     h+='<div class="status"><div class="spin">⏳</div><div style="font-size:14px;font-weight:700;margin-bottom:4px">'+(msg||'Analyse...')+'</div><div style="font-size:12px;color:rgba(240,237,232,.4)">Quelques secondes...</div></div>';
-  }else if(sec==='import'){
+  } else if(sec==='import'){
     h+='<div class="drop-zone" id="dz" onclick="document.getElementById(\'fi\').click()"><div style="font-size:36px;margin-bottom:10px">🧾</div><div style="font-size:15px;font-weight:700;margin-bottom:4px">Importer un ticket</div><div style="font-size:12px;color:rgba(240,237,232,.4)">PDF · JPG · PNG · TXT</div></div>';
     h+='<input type="file" id="fi" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv" style="display:none">';
     h+='<div style="text-align:center;color:rgba(240,237,232,.25);font-size:11px;margin:10px 0">— ou colle le texte —</div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start">' +
-      '<textarea id="ta" placeholder="Colle le texte de ton ticket ici..." style="flex:1;height:90px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;color:#F0EDE8;padding:10px;font-size:12px;font-family:monospace;resize:none;outline:none" oninput="window._taVal=this.value"></textarea>' +
-      '<button onclick="const v=window._taVal||document.getElementById('ta')?.value||'';if(v.trim().length>5){analyzeText(v);}else{alert('Colle du texte dans la zone avant de cliquer');}" style="background:#5BF5A8;color:#0A0A0F;border:none;border-radius:12px;padding:10px 14px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px;white-space:nowrap">⚡ Analyser</button>' +
-    '</div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start">';
+    h+='<textarea id="ta" placeholder="Colle le texte de ton ticket ici..." style="flex:1;height:90px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;color:#F0EDE8;padding:10px;font-size:12px;font-family:monospace;resize:none;outline:none" oninput="window._taVal=this.value"></textarea>';
+    h+='<button onclick="const v=window._taVal||\'\';;if(v.trim().length>5){analyzeText(v);}else{alert(\'Colle du texte dans la zone avant de cliquer\');}" style="background:#5BF5A8;color:#0A0A0F;border:none;border-radius:12px;padding:10px 14px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px;white-space:nowrap">⚡ Analyser</button>';
+    h+='</div>';
     if(msg&&status==='error')h+='<div class="err">⚠️ '+msg+'</div>';
-  }else if(sec==='compare'&&res){
+  } else if(sec==='compare'&&res){
     const {products:prods,store:st,total,date}=res;
-    const base=prods.reduce((a,p)=>a+(p.price*(p.qty||1)),0);
-    h+='<div class="ticket-info"><div><div class="ticket-store">'+(st||'Ticket importé')+'</div><div class="ticket-meta">'+(date?'Le '+date+' · ':'')+prods.length+' articles</div></div><div class="ticket-total">'+( total||base).toFixed(2)+' €</div></div>';
-    h+='<div class="sec-title">CHOISIR UNE ENSEIGNE</div>' +
-     '<div style="font-size:11px;color:rgba(240,237,232,.3);margin-bottom:10px">💡 Prix estimés selon les tarifs moyens de chaque enseigne — les prix réels peuvent varier</div>';
+    const base=prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0);
+    h+='<div class="ticket-info"><div><div class="ticket-store">'+(st||'Ticket importé')+'</div><div class="ticket-meta">'+(date?'Le '+date+' · ':'')+prods.length+' articles</div></div><div class="ticket-total">'+(total||base).toFixed(2)+' €</div></div>';
+    h+='<div class="sec-title">CHOISIR UNE ENSEIGNE</div>';
+    const hasReal=Object.keys(S.realPrices).length>0;
+    if(hasReal)h+='<div style="font-size:11px;color:rgba(91,245,168,.6);margin-bottom:8px">✓ Prix réels disponibles pour certains produits</div>';
     const ea=emAmt(prods),es=emSave(prods);
-    h+='<div class="ecomix '+(store==='ecomix'?'sel':'')+'" onclick="set({store:\'ecomix\'})"><div style="display:flex;align-items:center;gap:12px"><div style="font-size:24px">🌿</div><div><div class="em-name">Eco-Mix</div><div class="em-sub">Chaque produit chez le moins cher</div></div></div><div style="text-align:right"><div class="em-amt">'+ea.toFixed(2)+' €</div><div class="em-save">-'+es.toFixed(2)+' € eco.</div></div></div>';
+    h+='<div class="ecomix '+(store==='ecomix'?'sel':'')+'" onclick="set({store:\'ecomix\'})"><div style="display:flex;align-items:center;gap:12px"><div style="font-size:24px">🌿</div><div><div class="em-name">Eco-Mix</div><div class="em-sub">Chaque produit chez le moins cher</div></div></div><div style="text-align:right"><div class="em-amt">'+ea.toFixed(2)+' €</div><div class="em-save">-'+es.toFixed(2)+' € économisés</div></div></div>';
     h+='<div class="stores-grid">';
     STORES.forEach(s=>{
-      const ep=est(prods,s.id);
-      h+='<div class="store-card '+(store===s.id?'sel':'')+'" style="--sc:'+s.color+'" onclick="set({store:\''+s.id+'\'})">'+
-        (s.cheap?'<div class="cheap-badge">LE + BAS</div>':'')+
-        '<div class="store-icon" style="background:'+s.color+'22;color:'+s.color+'">'+s.letter+'</div>'+
-        '<div class="store-name">'+s.name+'</div>'+
-        '<div class="store-price" style="color:'+s.color+'">~'+ep.toFixed(2)+' €</div>'+
-        '<div style="font-size:11px;color:rgba(240,237,232,.35);margin-top:2px">estimation</div></div>';
+      const ct=calcStoreTotal(prods,s.id);
+      const priceStr=ct.total.toFixed(2)+' €';
+      const lbl=ct.realCount>0?ct.realCount+'/'+ct.totalCount+' réels':'estimation';
+      const lc=ct.realCount>0?'rgba(91,245,168,.8)':'rgba(240,237,232,.35)';
+      h+='<div class="store-card '+(store===s.id?'sel':'')+'" style="--sc:'+s.color+'" onclick="set({store:\''+s.id+'\'})">';
+      if(s.cheap)h+='<div class="cheap-badge">LE + BAS</div>';
+      h+='<div class="store-icon" style="background:'+s.color+'22;color:'+s.color+'">'+s.letter+'</div>';
+      h+='<div class="store-name">'+s.name+'</div>';
+      h+='<div class="store-price" style="color:'+s.color+'">'+priceStr+'</div>';
+      h+='<div style="font-size:11px;color:'+lc+';margin-top:2px">'+lbl+'</div></div>';
     });
     h+='</div>';
     if(store==='ecomix'){
-      // Eco-Mix: montrer chaque produit avec l'enseigne la moins chère
-      const bestStore = STORES.reduce((a,b)=>a.factor<b.factor?a:b);
-      h+='<div class="login-notice"><div class="login-title">🌿 Eco-Mix — meilleurs prix</div><div class="login-sub">Connecte-toi sur chaque site avant de démarrer le panier.</div></div>';
-      h+='<button class="btn-cart" style="background:linear-gradient(135deg,#5BF5A8,#00C97A);color:#0A0A0F" onclick="startCart(\''+bestStore.id+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier Eco-Mix ('+prods.length+' produits)</button>';
+      const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b);
+      h+='<div class="login-notice"><div class="login-title">🌿 Eco-Mix</div><div class="login-sub">Chaque produit acheté dans l'enseigne la moins chère.</div></div>';
+      h+='<button class="btn-cart" style="background:linear-gradient(135deg,#5BF5A8,#00C97A);color:#0A0A0F" onclick="startCart(\''+bestS.id+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier Eco-Mix ('+prods.length+' produits)</button>';
       h+='<div class="products">';
       prods.forEach(p=>{
-        const pBest=STORES.reduce((a,b)=>a.factor<b.factor?a:b);
-        h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig" style="color:'+pBest.color+'">'+pBest.name+'</div></div><div class="p-price">'+((p.price||0)*(p.qty||1)*pBest.factor).toFixed(2)+' €</div></div>';
+        const rp=getRealPrice(p.search,bestS.id);
+        const pd=rp!=null?'<span style="color:#5BF5A8">'+rp.toFixed(2)+' €</span>':((p.price||0)*(p.qty||1)).toFixed(2)+' €';
+        h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+pd+'</div></div>';
       });
       h+='</div>';
-    } else if(store&&store!=='ecomix'){
+    } else if(store){
       const s=STORES.find(x=>x.id===store);
       const cfg=DRIVE[store];
       if(cfg)h+='<div class="login-notice"><div class="login-title">🔐 Avant de démarrer</div><div class="login-sub">'+cfg.note+'</div></div><button class="btn-cart" style="background:'+s.color+'" onclick="startCart(\''+store+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier ('+prods.length+' produits)</button>';
       h+='<div class="products">';
       prods.forEach(p=>{
-        const storeId=S.store&&S.store!=='ecomix'?S.store:'leclerc';
-        const rpKey=Object.keys(S.realPrices).find(k=>k===p.search||p.search.startsWith(k)||k.startsWith(p.search.split(' ').slice(0,2).join(' ')));
-        const rp=rpKey?S.realPrices[rpKey]?.[storeId]:null;
-        const priceDisplay=rp!=null?rp.toFixed(2)+' €':((p.price||0)*(p.qty||1)).toFixed(2)+' €';
-        h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+priceDisplay+'</div></div>';
+        const rp=getRealPrice(p.search,store);
+        const pd=rp!=null?'<span style="color:#5BF5A8">'+rp.toFixed(2)+' €</span>':((p.price||0)*(p.qty||1)).toFixed(2)+' €';
+        h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+pd+'</div></div>';
       });
       h+='</div>';
     }
+    // Code postal
+    if(!S.cp){
+      h+='<div style="margin-top:16px;background:rgba(91,245,168,.08);border:1px solid rgba(91,245,168,.2);border-radius:12px;padding:12px">';
+      h+='<div style="font-size:13px;color:#5BF5A8;font-weight:700;margin-bottom:8px">📍 Ton code postal pour les vrais prix</div>';
+      h+='<div style="display:flex;gap:8px"><input id="cp-input" type="text" placeholder="Ex: 92410" maxlength="5" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#F0EDE8;font-size:14px;outline:none">';
+      h+='<button onclick="const v=document.getElementById(\'cp-input\').value;if(v.length>=4){S.cp=v;localStorage.setItem(\'prix_malin_cp\',v);const prods=S.results[S.catId]?.products||[];fetchRealPrices(prods,v).then(rp=>{if(Object.keys(rp).length>0){S.realPrices={...S.realPrices,...rp};render();}});}" style="background:#5BF5A8;color:#0A0A0F;border:none;border-radius:8px;padding:8px 14px;font-weight:800;cursor:pointer;font-family:inherit">OK</button></div></div>';
+    }
   }
+
   document.getElementById('root').innerHTML=h;
   const fi=document.getElementById('fi');
   const dz=document.getElementById('dz');
   if(fi)fi.onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);};
-  // Restaurer valeur textarea après re-render
-  // Restaurer valeur textarea après re-render
-  const taEl=document.getElementById('ta');
-  if(taEl && window._taVal) taEl.value = window._taVal;
   if(dz){dz.ondragover=e=>{e.preventDefault();dz.style.borderColor='#5BF5A8';};dz.ondragleave=()=>{dz.style.borderColor='';};dz.ondrop=e=>{e.preventDefault();dz.style.borderColor='';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);};}
+  // Restaurer valeur textarea
+  const taEl=document.getElementById('ta');
+  if(taEl&&window._taVal)taEl.value=window._taVal;
+  // Scroll si enseigne sélectionnée
+  if(S.store){setTimeout(()=>{const el=document.querySelector('.login-notice,.btn-cart,.products');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},50);}
 }
 render();
 </script>
