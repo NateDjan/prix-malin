@@ -118,42 +118,26 @@ async function analyzeText(text){
   try{
     const lines = text.trim().split('\n').filter(l=>l.trim());
     let products = [], store='', total=0, date='';
-
     if(lines.length <= 30){
-      // Petit ticket: 1 seul appel
       const res = await callAI(text, null);
       if(!res.products?.length) throw new Error('Aucun produit trouve');
       products = res.products; store = res.store; total = res.total; date = res.date;
     } else {
-      // Grand ticket: couper en 2 moitiés et appels parallèles
       const mid = Math.floor(lines.length/2);
-      const part1 = lines.slice(0, mid).join('\n');
-      const part2 = lines.slice(mid).join('\n');
-      set({msg:'Analyse partie 1/2...'});
-      const [r1, r2] = await Promise.all([
-        callAI(part1, null),
-        callAI(part2, null)
-      ]);
+      const [r1, r2] = await Promise.all([callAI(lines.slice(0,mid).join('\n'),null), callAI(lines.slice(mid).join('\n'),null)]);
       products = [...(r1.products||[]), ...(r2.products||[])];
-      store = r1.store || r2.store || '';
-      total = r1.total || r2.total || 0;
-      date = r1.date || r2.date || '';
+      store = r1.store || r2.store || ''; total = r1.total || r2.total || 0; date = r1.date || r2.date || '';
       if(!products.length) throw new Error('Aucun produit trouve');
     }
-
     const results={...S.results};
     results[S.catId]={products,store,total,date};
-    // Demander code postal si absent
-    if(!S.cp) {
-      const cp = prompt('Votre code postal (pour les prix de votre région) :','92410');
-      if(cp) { S.cp = cp; localStorage.setItem('prix_malin_cp', cp); }
-    }
     set({status:'done',results,msg:'',store:null,sec:'compare'});
-    // Fetch vrais prix en arrière-plan
-    if(S.cp) {
-      fetchRealPrices(res.products, S.cp).then(rp => {
-        S.realPrices = {...S.realPrices, ...rp};
-        render();
+    // Fetch vrais prix en arriere-plan si code postal dispo
+    const cp = S.cp || localStorage.getItem('prix_malin_cp') || '';
+    if(cp) {
+      S.cp = cp;
+      fetchRealPrices(products, cp).then(rp => {
+        if(Object.keys(rp).length > 0) { S.realPrices = {...S.realPrices, ...rp}; render(); }
       });
     }
   }catch(e){
