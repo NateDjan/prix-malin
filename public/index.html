@@ -96,8 +96,12 @@ async function analyze(){
     let msgs;
     if(S.file.type==='pdf'){
       const txt=await pdfText(S.file.data);
-      // PDF image: envoyer directement en base64 (pdf.js ne peut pas lire les PDF scannés)
-      msgs=[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:toB64(S.file.data)}},{type:'text',text:FP}]}];
+      // PDF scanné: envoyer en base64 avec prompt court
+      const b64pdf = toB64(S.file.data);
+      msgs=[{role:'user',content:[
+        {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64pdf}},
+        {type:'text',text:FP}
+      ]}];
     }else if(S.file.type==='img'){
       msgs=[{role:'user',content:[{type:'image',source:{type:'base64',media_type:S.file.mime,data:S.file.b64}},{type:'text',text:FP}]}];
     }else{
@@ -139,6 +143,17 @@ function showProg(prods,cur,name){
   const pct=Math.round(cur/prods.length*100);
   el.innerHTML='<div class="prog-head"><span>🛒 '+cur+'/'+prods.length+' · '+name+'</span><button class="btn-x" onclick="_running=false;document.getElementById(\'_prog\').remove()">Annuler</button></div><div class="prog-track"><div class="prog-fill" style="width:'+pct+'%"></div></div><div class="prog-prod">📦 '+prods[cur].search+'</div>';
 }
+let _pasteTimer=null;
+function handlePaste(text){
+  clearTimeout(_pasteTimer);
+  if(text.trim().length < 20) return;
+  _pasteTimer = setTimeout(async()=>{
+    set({file:{name:'ticket.txt',type:'txt',text:text}});
+    await analyze();
+  }, 800);
+}
+window.handlePaste=handlePaste;
+
 function render(){
   const {catId,sec,status,msg,results,store}=S;
   const res=results[catId];
@@ -160,8 +175,10 @@ function render(){
   if(sec==='import'){
     if(false){h+='';}
     else{
-      h+='<div class="drop-zone" id="dz" onclick="document.getElementById(\'fi\').click()"><div style="font-size:40px;margin-bottom:12px">🧾</div><div style="font-size:16px;font-weight:700;margin-bottom:6px">Importer un ticket</div><div style="font-size:12px;color:rgba(240,237,232,.4)">PDF · JPG · PNG · TXT · CSV</div></div>';
+      h+='<div class="drop-zone" id="dz" onclick="document.getElementById(\'fi\').click()"><div style="font-size:36px;margin-bottom:10px">🧾</div><div style="font-size:15px;font-weight:700;margin-bottom:4px">Importer un ticket</div><div style="font-size:12px;color:rgba(240,237,232,.4)">PDF · JPG · PNG · TXT · CSV</div></div>';
       h+='<input type="file" id="fi" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv" style="display:none">';
+      h+='<div style="text-align:center;color:rgba(240,237,232,.25);font-size:11px;margin:10px 0">— ou —</div>';
+      h+='<textarea id="paste-area" placeholder="Colle ici le texte de ton ticket (ultra rapide ⚡)" style="width:100%;height:100px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:#F0EDE8;padding:10px;font-size:12px;font-family:monospace;resize:none;outline:none" oninput="handlePaste(this.value)"></textarea>';
       if(msg&&status==='error')h+='<div class="err">⚠️ '+msg+'</div>';
     }
   }else if(sec==='compare'&&res){
