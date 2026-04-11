@@ -1,13 +1,10 @@
 {
   "version": 2,
+  "outputDirectory": "public",
   "rewrites": [
     {
-      "source": "/api/ai",
-      "destination": "/api/ai"
-    },
-    {
-      "source": "(.*)",
-      "destination": "/public/index.html"
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ]
 }
