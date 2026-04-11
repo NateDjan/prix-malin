@@ -215,7 +215,7 @@ function xJSON(t){
   throw new Error("JSON introuvable");
 }
 
-async function callAI(messages,maxTokens=4000){
+async function callAI(messages,maxTokens=2000){
   const res=await fetch(API_URL,{
     method:"POST",
     headers:{"Content-Type":"application/json"},
@@ -231,7 +231,7 @@ async function callAI(messages,maxTokens=4000){
 }
 
 async function callWithRetry(messages){
-  for(const t of [4000,8000]){
+  for(const t of [2000,4000,8000]){
     try{return await callAI(messages,t);}
     catch(e){
       if(e.message==="MAX_TOKENS"&&t<8000)continue;
@@ -271,6 +271,33 @@ function b64buf(buf){
 }
 
 // ── Analyse ────────────────────────────────────────────────────────────────────
+
+// Extraction texte PDF côté client (évite le timeout)
+async function extractPdfText(arrayBuffer) {
+  try {
+    // Lire le PDF comme texte brut - chercher les chaînes lisibles
+    const bytes = new Uint8Array(arrayBuffer);
+    let text = "";
+    let inString = false;
+    let current = "";
+    for(let i = 0; i < bytes.length; i++) {
+      const c = bytes[i];
+      if(c === 40) { inString = true; current = ""; } // '('
+      else if(c === 41 && inString) { // ')'
+        inString = false;
+        if(current.length > 2 && /[a-zA-Z0-9éèàùâêîôûäëïöü€.,;:!? ]{3,}/.test(current)) {
+          text += current + " ";
+        }
+        current = "";
+      } else if(inString) {
+        if(c >= 32 && c < 127) current += String.fromCharCode(c);
+        else if(c > 127) current += String.fromCharCode(c); // UTF chars
+      }
+    }
+    return text.slice(0,12000);
+  } catch(e) { return ""; }
+}
+
 async function analyze(){
   if(S.status==="loading")return;
   set({status:"loading",errMsg:""});
