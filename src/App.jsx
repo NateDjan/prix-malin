@@ -82,35 +82,25 @@ const DRIVE = {
   lidl:        { note: 'Disponible sur lidl.fr',                            url: q => `https://www.lidl.fr/recherche?q=${encodeURIComponent(q)}` },
 }
 
-function ProgressBar({ products, cur, storeName, onClose }) {
-  if (cur===null) return null
-  const done = cur>=products.length
-  const pct = done?100:Math.round(cur/products.length*100)
-  // État -1 = attente connexion
-  if (progress === -1) return (
-    <div className="prog-bar" style={{background:'rgba(91,245,168,0.08)',border:'1px solid #5BF5A8',borderRadius:12,padding:'12px 16px',margin:'16px 0',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+function ProgressBar({ products, cur, storeName, onClose, onContinue }) {
+  if (cur === null) return null
+  // État -1 = attente connexion utilisateur
+  if (cur === -1) return (
+    <div className="prog-bar" style={{background:'rgba(91,245,168,0.08)',border:'1px solid rgba(91,245,168,0.4)',borderRadius:12,padding:'12px 16px',margin:'16px 0',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
       <span style={{fontSize:20}}>🔐</span>
       <span style={{flex:1,fontSize:13,color:'rgba(240,237,232,0.8)'}}>
-        Connecte-toi sur Leclerc Drive dans l'onglet qui vient de s'ouvrir, puis clique <b>Continuer</b>
+        Connecte-toi sur <b>{storeName}</b> dans l'onglet qui vient de s'ouvrir, puis clique <b>Continuer</b>
       </span>
-      <button onClick={() => continueCart(window._cartQueue, window._cartSel, window._cartOnProgress)}
-        style={{background:'#5BF5A8',color:'#0A0A0F',border:'none',borderRadius:8,padding:'8px 16px',fontWeight:700,cursor:'pointer',fontSize:13}}>
+      <button onClick={onContinue} style={{background:'#5BF5A8',color:'#0A0A0F',border:'none',borderRadius:8,padding:'8px 16px',fontWeight:700,cursor:'pointer',fontSize:13}}>
         ✅ Continuer
       </button>
-      <button onClick={() => { stopCart(); setCartProgress(null); }}
-        style={{background:'transparent',color:'rgba(240,237,232,0.5)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,padding:'8px 12px',cursor:'pointer',fontSize:13}}>
+      <button onClick={onClose} style={{background:'transparent',color:'rgba(240,237,232,0.5)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,padding:'8px 12px',cursor:'pointer',fontSize:13}}>
         Annuler
       </button>
     </div>
   )
-  return (<div className="prog-bar">
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:done?0:8}}>
-      <span style={{color:'#5BF5A8',fontWeight:800,fontSize:13}}>{done?`✅ ${products.length} produits ajoutés sur ${storeName}`:`🛒 ${cur}/${products.length} · ${storeName}`}</span>
-      <button onClick={onClose} style={{background:'none',border:'1px solid rgba(240,237,232,.2)',color:'rgba(240,237,232,.4)',padding:'4px 10px',borderRadius:8,cursor:'pointer',fontSize:11,fontFamily:'inherit'}}>{done?'Fermer':'Annuler'}</button>
-    </div>
-    {!done && <><div style={{background:'rgba(255,255,255,.08)',borderRadius:4,height:6,marginBottom:6}}><div style={{background:'#5BF5A8',height:6,borderRadius:4,width:`${pct}%`,transition:'width .4s'}}/></div><div style={{fontSize:12,color:'rgba(240,237,232,.5)'}}>📦 {products[cur]?.search}</div></>}
-  </div>)
-}
+  const done = cur >= products.length
+  const pct = done ? 100 : Math.round(cur / products.length * 100)
 
 function ImportView({ onAnalyze, loading, error }) {
   const [text, setText] = useState('')
@@ -197,7 +187,7 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
       <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,bestS.id,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
     </div>) })()}
     {!cp&&(<div className="cp-box"><div className="cp-label">📍 Code postal pour les vrais prix</div><div className="cp-row"><input className="cp-input" type="text" placeholder="Ex: 92410" maxLength={5} value={cpInput} onChange={e=>setCpInput(e.target.value)}/><button className="cp-btn" onClick={()=>{if(cpInput.length>=4){onSetCp(cpInput);onFetchPrices(products,cpInput)}}}>OK</button></div></div>)}
-    {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar products={products} cur={cartProgress} storeName={s?.name||''} onClose={()=>{stopCart();setCartProgress(null)}}/> })()}
+    {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar products={products} cur={cartProgress} storeName={s?.name||''} onClose={()=>{stopCart();setCartProgress(null)}} onContinue={() => continueCart(window._cartQueue, window._cartSel, cur => setCartProgress(cur))}/> })()}
   </>)
 }
 
