@@ -8,79 +8,114 @@ export const CART_SEL = {
   lidl:        '.m-button--primary',
 }
 
-// Construit le HTML d'une page bot qui navigue vers url et clique sel
-export function buildBotHtml(url, sel) {
-  const script = [
-    'var url="' + url.replace(/"/g, '\\"') + '";',
-    'var sel="' + sel.replace(/"/g, '\\"') + '";',
-    'function tryClick(){',
-    '  var b=document.querySelector(sel);',
-    '  if(!b){var all=document.querySelectorAll("a,button");for(var j=0;j<all.length;j++){var t=(all[j].textContent+(all[j].getAttribute("aria-label")||"")).toLowerCase().trim();if((t.includes("ajouter au panier")||t==="acheter")&&!all[j].disabled&&!all[j].classList.contains("inactive")){b=all[j];break;}}}',
-    '  if(b&&!b.classList.contains("inactive")&&!b.classList.contains("WCTD_disabled")&&!b.disabled){b.click();try{window.opener.postMessage("done","*");}catch(e){}return true;}',
-    '  return false;',
-    '}',
-    'window.onload=function(){if(!tryClick()){var n=0,iv=setInterval(function(){if(tryClick()||++n>20){clearInterval(iv);if(n>20)try{window.opener.postMessage("timeout","*");}catch(e){}},400)}};',
-    'window.location.href=url;',
-  ].join('');
-  return '<html><head></head><body>' + '<' + 'script>' + script + '</' + 'script></body></html>';
+let _running = false
+
+function clickBtn(doc, sel) {
+  // Essayer le sélecteur spécifique
+  let btn = doc.querySelector(sel)
+  if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled') && !btn.disabled) {
+    btn.click()
+    return true
+  }
+  // Fallback universel
+  const all = doc.querySelectorAll('a,button')
+  for (let j = 0; j < all.length; j++) {
+    const t = (all[j].textContent + (all[j].getAttribute('aria-label') || '')).toLowerCase().trim()
+    if ((t.includes('ajouter au panier') || t === 'acheter') && !all[j].disabled && !all[j].classList.contains('inactive')) {
+      all[j].click()
+      return true
+    }
+  }
+  return false
 }
 
-let _cartRunning = false;
+export function stopCart() { _running = false }
 
 export function startCart(storeId, products, driveConfig, onProgress) {
-  if (_cartRunning) return;
-  _cartRunning = true;
-  const cfg = driveConfig[storeId];
-  if (!cfg) return;
-  const sel = CART_SEL[storeId] || '.aWCRS310_Add';
+  if (_running) return
+  _running = true
+  const cfg = driveConfig[storeId]
+  if (!cfg) return
+  const sel = CART_SEL[storeId] || '.aWCRS310_Add'
 
-  (async () => {
-    let w = null;
-    let _resolve = null;
+  ;(async () => {
+    let w = null
+    let resolveMsg = null
 
-    const handler = (e) => {
-      if ((e.data === 'done' || e.data === 'timeout') && _resolve) {
-        _resolve(e.data);
+    const msgHandler = (e) => {
+      if (e.data === 'cart_done' || e.data === 'cart_timeout') {
+        resolveMsg && resolveMsg(e.data)
       }
-    };
-    window.addEventListener('message', handler);
+    }
+    window.addEventListener('message', msgHandler)
 
     for (let i = 0; i < products.length; i++) {
-      if (!_cartRunning) break;
-      onProgress(i);
-      const url = cfg.url(products[i].search);
-      const html = buildBotHtml(url, sel);
+      if (!_running) break
+      onProgress(i)
+      const url = cfg.url(products[i].search)
 
+      // Ouvrir une page vide — même origine, on peut lui écrire dessus
       if (!w || w.closed) {
-        w = window.open('about:blank', '_leclerc');
+        w = window.open('about:blank', '_cart_pm')
       }
 
+      // Injecter le bot via w.document (fonctionne car about:blank = même origine)
       try {
-        w.document.open();
-        w.document.write(html);
-        w.document.close();
+        const botFn = new w.Function(
+          'sel', 'url', 'opener',
+          [
+            'function tryClick() {',
+            '  var b = document.querySelector(sel);',
+            '  if (!b) {',
+            '    var els = document.querySelectorAll("a,button");',
+            '    for (var k=0; k<els.length; k++) {',
+            '      var t = (els[k].textContent + (els[k].getAttribute("aria-label")||"")).toLowerCase().trim();',
+            '      if ((t.includes("ajouter au panier") || t === "acheter") && !els[k].disabled && !els[k].classList.contains("inactive")) { b = els[k]; break; }',
+            '    }',
+            '  }',
+            '  if (b && !b.classList.contains("inactive") && !b.classList.contains("WCTD_disabled") && !b.disabled) {',
+            '    b.click();',
+            '    try { opener.postMessage("cart_done", "*"); } catch(e) {}',
+            '    return true;',
+            '  }',
+            '  return false;',
+            '}',
+            'window.onload = function() {',
+            '  if (!tryClick()) {',
+            '    var n=0; var iv = setInterval(function() {',
+            '      if (tryClick() || ++n > 20) {',
+            '        clearInterval(iv);',
+            '        if (n > 20) try { opener.postMessage("cart_timeout", "*"); } catch(e) {}',
+            '      }',
+            '    }, 400);',
+            '  }',
+            '};',
+            'window.location.href = url;',
+          ].join('\n')
+        )
+        botFn(sel, url, window)
       } catch(e) {
-        try { w.close(); } catch(e2) {}
-        w = window.open('about:blank', '_leclerc');
-        try { w.document.open(); w.document.write(html); w.document.close(); } catch(e3) {}
+        // Si new Function échoue, naviguer directement
+        w.location.href = url
+        await new Promise(r => setTimeout(r, 5000))
+        try { clickBtn(w.document, sel) } catch(e2) {}
+        onProgress(i + 1)
+        await new Promise(r => setTimeout(r, 600))
+        continue
       }
 
       // Attendre postMessage (max 15s)
       await new Promise(r => {
-        _resolve = r;
-        setTimeout(() => r('timeout'), 15000);
-      });
-      _resolve = null;
-      await new Promise(r => setTimeout(r, 600));
+        resolveMsg = r
+        setTimeout(() => r('timeout'), 15000)
+      })
+      resolveMsg = null
+      await new Promise(r => setTimeout(r, 600))
     }
 
-    window.removeEventListener('message', handler);
-    onProgress(products.length);
-    _cartRunning = false;
-    try { if (w) w.close(); } catch(e) {}
-  })();
-}
-
-export function stopCart() {
-  _cartRunning = false;
+    window.removeEventListener('message', msgHandler)
+    onProgress(products.length)
+    _running = false
+    try { w && w.close() } catch(e) {}
+  })()
 }
