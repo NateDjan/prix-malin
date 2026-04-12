@@ -82,85 +82,73 @@ function ecoTotal(products, realPrices) {
 
 let _cartRunning = false
 
-// Script auto-clic injecté dans la page Leclerc Drive dès la 1ère ouverture.
-// Il se sauvegarde dans sessionStorage et se réinjecte à chaque page via DOMContentLoaded.
-const BOT_SCRIPT = `
-(function() {
-  var SEL = '.aWCRS310_Add';
-  function tryClick() {
-    var btn = document.querySelector(SEL);
-    if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled')) {
-      btn.click(); return true;
-    }
-    return false;
-  }
-  function activate() {
-    if (!tryClick()) {
-      var n=0, iv=setInterval(function(){ if(tryClick()||++n>20) clearInterval(iv); },400);
-    }
-  }
-  if (sessionStorage.getItem('_prxBot')==='1') {
-    activate();
-  }
-  sessionStorage.setItem('_prxBot','1');
-  activate();
-  document.addEventListener('DOMContentLoaded', activate);
-})();
-`;
-
+// Ouvre toutes les fenêtres en parallèle depuis le clic utilisateur
+// Chaque fenêtre attend son chargement puis clique .aWCRS310_Add
+// Puis on ferme tout sauf la 1ère
 function startCart(storeId, products, onProgress) {
   if (_cartRunning) return;
   _cartRunning = true;
   const cfg = DRIVE[storeId]; if (!cfg) return;
 
-  ;(async () => {
-    // Ouvrir le 1er produit — à ce moment on peut encore écrire dans la fenêtre
-    const url0 = cfg.url(products[0].search);
-    const w = window.open('about:blank', '_leclerc');
-    onProgress(0);
+  // Ouvrir TOUTES les fenêtres immédiatement (on est dans le handler du clic → autorisé)
+  const wins = products.map((p, i) => {
+    try { return window.open(cfg.url(p.search), '_blank'); }
+    catch(e) { return null; }
+  });
 
-    // Injecter le bot AVANT de naviguer — la fenêtre about:blank est same-origin
-    try {
-      w.document.open();
-      w.document.write(`<script>
-        sessionStorage.setItem('_prxBot','1');
-        window.location.href = '${url0.replace(/'/g,"\\'")}';
-      <\/script>`);
-      w.document.close();
-    } catch(e) {
-      // Fallback: ouvrir directement
-      w.location.href = url0;
+  onProgress(0);
+
+  // Pour chaque fenêtre, attendre le chargement puis cliquer
+  const sel = '.aWCRS310_Add';
+  const FALLBACK = 'a,button,[role="button"]';
+
+  async function handleWindow(w, idx) {
+    if (!w) return;
+    // Polling readyState
+    for (let t = 0; t < 30; t++) {
+      await new Promise(r => setTimeout(r, 500));
+      try { if (w.document.readyState === 'complete') break; } catch(e) {}
     }
-
-    // Attendre que la 1ère page charge
-    await new Promise(r => setTimeout(r, 5000));
-
-    // Injecter le script bot dans la page chargée
-    try {
-      const s = w.document.createElement('script');
-      s.textContent = BOT_SCRIPT;
-      w.document.head.appendChild(s);
-    } catch(e) {}
-
-    // Boucle sur les produits suivants
-    for (let i = 1; i < products.length; i++) {
-      if (!_cartRunning) break;
-      onProgress(i);
-      try { w.location.href = cfg.url(products[i].search); } catch(e) { break; }
-      // Attendre le chargement + le clic auto du bot
-      await new Promise(r => setTimeout(r, 5000));
-      // Fallback : si le bot n'a pas cliqué, on essaie nous-mêmes
+    // Délai JS de la page
+    await new Promise(r => setTimeout(r, 1200));
+    // Retry clic jusqu'à 8 fois
+    for (let t = 0; t < 8; t++) {
       try {
-        const btn = w.document.querySelector('.aWCRS310_Add');
-        if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled')) {
+        const btn = w.document.querySelector(sel);
+        if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled') && !btn.disabled) {
           btn.click();
+          onProgress(idx + 1);
+          // Attendre que le clic soit pris en compte puis fermer
+          await new Promise(r => setTimeout(r, 1500));
+          if (idx > 0) try { w.close(); } catch(e) {}
+          return;
+        }
+        // Fallback
+        const all = [...w.document.querySelectorAll(FALLBACK)];
+        const fb = all.find(b => {
+          const t2 = (b.textContent + (b.getAttribute('aria-label') || '')).toLowerCase().trim();
+          return (t2.includes('ajouter au panier') || t2 === 'acheter') && !b.disabled && !b.classList.contains('inactive');
+        });
+        if (fb) {
+          fb.click();
+          onProgress(idx + 1);
+          await new Promise(r => setTimeout(r, 1500));
+          if (idx > 0) try { w.close(); } catch(e) {}
+          return;
         }
       } catch(e) {}
+      await new Promise(r => setTimeout(r, 500));
     }
+    // Pas trouvé — fermer quand même (sauf 1ère)
+    if (idx > 0) try { w.close(); } catch(e) {}
+    onProgress(idx + 1);
+  }
 
+  // Lancer tout en parallèle
+  Promise.all(wins.map((w, i) => handleWindow(w, i))).then(() => {
     onProgress(products.length);
     _cartRunning = false;
-  })();
+  });
 }
 
 function ProgressBar({ products, cur, storeName, onClose }) {
