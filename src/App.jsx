@@ -1,12 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 
 const CATS = [
-  { id: 'food', icon: '🥦', label: 'Alimentaire' },
-  { id: 'tech', icon: '💻', label: 'Tech' },
-  { id: 'home', icon: '🏠', label: 'Maison' },
-  { id: 'fashion', icon: '👗', label: 'Mode' },
-  { id: 'sport', icon: '⚽', label: 'Sport' },
-  { id: 'beauty', icon: '💄', label: 'Beaute' },
+  { id: 'food', icon: '🛒', label: 'Mes courses' },
 ]
 
 const STORES = [
@@ -118,19 +113,69 @@ function ecoTotal(products, realPrices) {
 
 // --- Panier auto ---
 let _cartRunning = false
+
+// Injecter un script dans la fenetre du drive pour cliquer "Ajouter au panier"
+async function addToCartInWindow(w, storeId) {
+  if (!w || w.closed) return false;
+  try {
+    // Attendre que la page soit chargee
+    await new Promise(r => setTimeout(r, 3000));
+    if (w.closed) return false;
+    // Injecter le script qui clique sur le premier bouton Ajouter au panier
+    w.eval(`
+      (function() {
+        // Selecteurs pour differentes enseignes
+        const selectors = [
+          '[aria-label*="Ajouter"]',
+          'button[aria-label*="panier"]',
+          '.add-to-cart', '.addtocart', '.btn-add-cart',
+          'button.addArticle', 'button[data-action="add"]',
+          '.c-button--tone-main',
+          'button:not([disabled])'
+        ];
+        for (const sel of selectors) {
+          const btns = document.querySelectorAll(sel);
+          for (const btn of btns) {
+            const txt = (btn.textContent + btn.getAttribute('aria-label') + '').toLowerCase();
+            if (txt.includes('ajouter') || txt.includes('acheter') || txt.includes('panier') || txt.includes('add')) {
+              btn.click();
+              return true;
+            }
+          }
+        }
+        // Fallback: cliquer le premier bouton visible qui n'est pas de navigation
+        const allBtns = [...document.querySelectorAll('button')];
+        const addBtn = allBtns.find(b => {
+          const t = b.textContent.trim().toLowerCase();
+          return (t === 'acheter' || t === 'ajouter' || t.includes('panier')) && !b.disabled;
+        });
+        if (addBtn) { addBtn.click(); return true; }
+        return false;
+      })()
+    `);
+    await new Promise(r => setTimeout(r, 1000));
+    return true;
+  } catch(e) { return false; }
+}
+
 function startCart(storeId, products, onProgress) {
   if (_cartRunning) return; _cartRunning = true
   const cfg = DRIVE[storeId]; if (!cfg) return
   ;(async () => {
+    // Ouvrir le premier produit
     const w = window.open(cfg.url(products[0].search), '_cart')
     onProgress(0)
-    await new Promise(r => setTimeout(r, 4000))
+    await addToCartInWindow(w, storeId)
+    
     for (let i = 1; i < products.length; i++) {
       if (!_cartRunning) break
       onProgress(i)
-      if (w && !w.closed) w.location.href = cfg.url(products[i].search)
-      else window.open(cfg.url(products[i].search), '_cart')
-      await new Promise(r => setTimeout(r, 4000))
+      if (w && !w.closed) {
+        w.location.href = cfg.url(products[i].search)
+      } else {
+        window.open(cfg.url(products[i].search), '_cart')
+      }
+      await addToCartInWindow(w, storeId)
     }
     onProgress(products.length); _cartRunning = false
   })()
@@ -382,14 +427,7 @@ export default function App() {
     <div className="app">
       <h1>Prix Malin 🛒</h1>
       <div className="sub">Compare les prix · Economise partout</div>
-      <div className="tabs">
-        {CATS.map(c => (
-          <button key={c.id} className={`tab-btn ${c.id===catId?'active':''}`}
-            onClick={() => { setCatId(c.id); setSec('import') }}>
-            <span className="tab-icon">{c.icon}</span><span>{c.label}</span>
-          </button>
-        ))}
-      </div>
+      {/* Pas de tabs categories - uniquement courses */}
       <div className="sec-tabs">
         <button className={`sec-btn ${sec==='import'?'active':''}`} onClick={() => setSec('import')}>📥 Importer</button>
         <button className={`sec-btn ${sec==='compare'&&result?'active':''}`} disabled={!result}
