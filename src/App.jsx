@@ -189,7 +189,7 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
       <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,bestS.id,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
     </div>) })()}
     {!cp&&(<div className="cp-box"><div className="cp-label">📍 Code postal pour les vrais prix</div><div className="cp-row"><input className="cp-input" type="text" placeholder="Ex: 92410" maxLength={5} value={cpInput} onChange={e=>setCpInput(e.target.value)}/><button className="cp-btn" onClick={()=>{if(cpInput.length>=4){onSetCp(cpInput);onFetchPrices(products,cpInput)}}}>OK</button></div></div>)}
-    {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar products={products} cur={cartProgress} storeName={s?.name||''} onClose={()=>{stopCart();setCartProgress(null)}} onContinue={() => continueCart(window._cartQueue, window._cartSel, cur => setCartProgress(cur))}/> })()}
+    {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar products={products} cur={cartProgress} storeName={s?.name||''} onClose={()=>{stopCart();setCartProgress(null)}} /> })()}
   </>)
 }
 
