@@ -35,3 +35,4 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: cors });
   }
 }
+// Groq llama-3.3-70b-versatile
