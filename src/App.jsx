@@ -6,7 +6,7 @@ const CATS = [
   { id: 'home', icon: '🏠', label: 'Maison' },
   { id: 'fashion', icon: '👗', label: 'Mode' },
   { id: 'sport', icon: '⚽', label: 'Sport' },
-  { id: 'beauty', icon: '💄', label: 'Beauté' },
+  { id: 'beauty', icon: '💄', label: 'Beaute' },
 ]
 
 const STORES = [
@@ -27,40 +27,49 @@ const DRIVE = {
   lidl:        { note: 'Disponible sur lidl.fr',                            url: q => `https://www.lidl.fr/recherche?q=${encodeURIComponent(q)}` },
 }
 
-const FP = 'Extrait les produits. JSON uniquement sans markdown: {"products":[{"original":"texte brut","search":"nom normalise","qty":1,"price":0.00}],"store":"enseigne","total":0.00,"date":"JJ/MM/AAAA"}'
-const SYS = 'Reponds uniquement avec du JSON valide, sans markdown, sans explication.'
+const SYS = 'Tu es un assistant qui extrait des produits de tickets de caisse. Reponds UNIQUEMENT avec du JSON valide, sans markdown, sans explication.'
+const FP = 'Extrait tous les produits de ce ticket. JSON uniquement sans markdown:\n{"products":[{"original":"texte brut","search":"nom normalise","qty":1,"price":0.00}],"store":"enseigne ou vide","total":0.00,"date":"JJ/MM/AAAA ou vide"}'
 
-function toB64(buf) {
-  const b = new Uint8Array(buf); let s = ''
-  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i])
-  return btoa(s)
-}
-
-let _apiKey = null
-async function getKey() {
-  if (_apiKey) return _apiKey
-  const d = await fetch('/api/key').then(r => r.json())
-  _apiKey = d.k; return _apiKey
-}
-
-async function callAI(text, b64Pdf) {
-  const k = await getKey()
-  const content = b64Pdf
-    ? [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64Pdf } }, { type: 'text', text: FP }]
-    : text + '\n\n' + FP
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+// --- API via proxy /api/ai (xAI Grok) ---
+async function callProxy(messages) {
+  const r = await fetch('/api/ai', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': k, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 4000, system: SYS, messages: [{ role: 'user', content }] }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ system: SYS, messages })
   })
   const d = await r.json()
-  if (!r.ok) throw new Error(d?.error?.message || 'Erreur API')
-  const t = d.content?.find(b => b.type === 'text')?.text || ''
-  const m = t.match(/\{[\s\S]*\}/)
-  if (!m) throw new Error('Reponse invalide')
+  if (!r.ok || d.error) throw new Error(d.error || 'Erreur API')
+  const m = (d.text || '').match(/\{[\s\S]*\}/)
+  if (!m) throw new Error('Reponse invalide du modele')
   return JSON.parse(m[0])
 }
 
+async function analyzeText(text) {
+  const lines = text.trim().split('\n')
+  if (lines.length <= 40) {
+    return callProxy([{ role: 'user', content: text + '\n\n' + FP }])
+  }
+  const mid = Math.floor(lines.length / 2)
+  const [r1, r2] = await Promise.all([
+    callProxy([{ role: 'user', content: lines.slice(0, mid).join('\n') + '\n\n' + FP }]),
+    callProxy([{ role: 'user', content: lines.slice(mid).join('\n') + '\n\n' + FP }])
+  ])
+  return {
+    products: [...(r1.products || []), ...(r2.products || [])],
+    store: r1.store || r2.store || '',
+    total: r1.total || r2.total || 0,
+    date: r1.date || r2.date || ''
+  }
+}
+
+async function analyzeImage(b64, mediaType) {
+  return callProxy([{ role: 'user', content: [
+    { type: 'image_url', image_url: { url: `data:${mediaType};base64,${b64}` } },
+    { type: 'text', text: FP }
+  ]}])
+}
+
+// --- Prix reels ---
 async function fetchRealPrices(products, cp) {
   const top = [...products].sort((a, b) => (b.price||0)*(b.qty||1) - (a.price||0)*(a.qty||1)).slice(0, 5)
   const prices = {}
@@ -96,12 +105,16 @@ function calcStoreTotal(products, storeId, realPrices) {
 
 function ecoTotal(products, realPrices) {
   return +products.reduce((sum, p) => {
-    let best = (p.price||0)*(p.qty||1)*Math.min(...STORES.map(s => s.factor))
-    STORES.forEach(s => { const rp = getRealPrice(p.search, s.id, realPrices); if (rp != null && rp*(p.qty||1) < best) best = rp*(p.qty||1) })
+    let best = (p.price||0)*(p.qty||1) * Math.min(...STORES.map(s => s.factor))
+    STORES.forEach(s => {
+      const rp = getRealPrice(p.search, s.id, realPrices)
+      if (rp != null) best = Math.min(best, rp * (p.qty||1))
+    })
     return sum + best
   }, 0).toFixed(2)
 }
 
+// --- Panier auto ---
 let _cartRunning = false
 function startCart(storeId, products, onProgress) {
   if (_cartRunning) return; _cartRunning = true
@@ -121,6 +134,7 @@ function startCart(storeId, products, onProgress) {
   })()
 }
 
+// --- Composants ---
 function ProgressBar({ products, cur, storeName, onClose }) {
   if (cur === null) return null
   const done = cur >= products.length
@@ -152,12 +166,14 @@ function ImportView({ onAnalyze, loading, error }) {
 
   const handleFile = useCallback(async file => {
     const ext = file.name.split('.').pop().toLowerCase()
-    if (ext === 'pdf') { const buf = await file.arrayBuffer(); onAnalyze(null, toB64(buf)) }
-    else if (['jpg','jpeg','png','webp'].includes(ext)) {
-      const r = new FileReader()
-      r.onload = e => onAnalyze(null, null, e.target.result.split(',')[1], file.type)
-      r.readAsDataURL(file)
-    } else { const t = await file.text(); onAnalyze(t) }
+    if (['jpg','jpeg','png','webp'].includes(ext)) {
+      const reader = new FileReader()
+      reader.onload = e => onAnalyze(null, e.target.result.split(',')[1], file.type)
+      reader.readAsDataURL(file)
+    } else {
+      const t = await file.text()
+      onAnalyze(t)
+    }
   }, [onAnalyze])
 
   return (<>
@@ -170,13 +186,16 @@ function ImportView({ onAnalyze, loading, error }) {
     >
       <div style={{ fontSize:36, marginBottom:10 }}>🧾</div>
       <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>Importer un ticket</div>
-      <div style={{ fontSize:12, color:'rgba(240,237,232,.4)' }}>PDF · JPG · PNG · TXT — glisse ou clique</div>
-      <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt" style={{ display:'none' }} onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
+      <div style={{ fontSize:12, color:'rgba(240,237,232,.4)' }}>JPG · PNG · TXT — glisse ou clique</div>
+      <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp,.txt,.csv" style={{ display:'none' }}
+        onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
     </div>
     <div className="sep">— ou colle le texte —</div>
     <div className="paste-row">
       <textarea placeholder="Colle le texte de ton ticket ici..." value={text} onChange={e => setText(e.target.value)} />
-      <button className="btn-analyse" disabled={loading || text.trim().length < 5} onClick={() => onAnalyze(text)}>⚡ Analyser</button>
+      <button className="btn-analyse" disabled={loading || text.trim().length < 5} onClick={() => onAnalyze(text)}>
+        ⚡ Analyser
+      </button>
     </div>
     {error && <div className="err">⚠️ {error}</div>}
   </>)
@@ -190,13 +209,6 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
   const base = products.reduce((a, p) => a + (p.price||0)*(p.qty||1), 0)
   const ecoAmt = ecoTotal(products, realPrices)
   const hasReal = Object.keys(realPrices).length > 0
-
-  const handleCart = sid => {
-    const s = STORES.find(x => x.id === sid)
-    setCartProgress(0)
-    startCart(sid, products, cur => setCartProgress(cur))
-  }
-
   const currentStore = store && store !== 'ecomix' ? STORES.find(x => x.id === store) : null
 
   return (<>
@@ -239,24 +251,27 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
       })}
     </div>
 
-    {store && store !== 'ecomix' && currentStore && (() => {
-      const cfg = DRIVE[store]
-      return (<div>
-        {cfg && <div className="notice"><div className="notice-title">🔐 Avant de demarrer</div><div className="notice-sub">{cfg.note}</div></div>}
-        <button className="btn-cart" style={{ background: currentStore.color }} onClick={() => handleCart(store)}>
-          🛒 Panier {currentStore.name} ({products.length} produits)
-        </button>
-        <div className="products">
-          {products.map((p, i) => {
-            const rp = getRealPrice(p.search, store, realPrices)
-            return (<div key={i} className="product">
-              <div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div>
-              <div className={`p-price ${rp != null ? 'real' : ''}`}>{rp != null ? rp.toFixed(2) : ((p.price||0)*(p.qty||1)).toFixed(2)} €</div>
-            </div>)
-          })}
-        </div>
-      </div>)
-    })()}
+    {store && store !== 'ecomix' && currentStore && (<div>
+      <div className="notice">
+        <div className="notice-title">🔐 Avant de demarrer</div>
+        <div className="notice-sub">{DRIVE[store]?.note}</div>
+      </div>
+      <button className="btn-cart" style={{ background: currentStore.color }}
+        onClick={() => { setCartProgress(0); startCart(store, products, cur => setCartProgress(cur)) }}>
+        🛒 Panier {currentStore.name} ({products.length} produits)
+      </button>
+      <div className="products">
+        {products.map((p, i) => {
+          const rp = getRealPrice(p.search, store, realPrices)
+          return (<div key={i} className="product">
+            <div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div>
+            <div className={`p-price ${rp != null ? 'real' : ''}`}>
+              {rp != null ? rp.toFixed(2) : ((p.price||0)*(p.qty||1)).toFixed(2)} €
+            </div>
+          </div>)
+        })}
+      </div>
+    </div>)}
 
     {store === 'ecomix' && (() => {
       const bestS = STORES.reduce((a, b) => a.factor < b.factor ? a : b)
@@ -265,7 +280,8 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
           <div className="notice-title">🌿 Eco-Mix</div>
           <div className="notice-sub">Chaque produit dans l&apos;enseigne la moins chere.</div>
         </div>
-        <button className="btn-cart" style={{ background:'linear-gradient(135deg,#5BF5A8,#00C97A)', color:'#0A0A0F' }} onClick={() => handleCart(bestS.id)}>
+        <button className="btn-cart" style={{ background:'linear-gradient(135deg,#5BF5A8,#00C97A)', color:'#0A0A0F' }}
+          onClick={() => { setCartProgress(0); startCart(bestS.id, products, cur => setCartProgress(cur)) }}>
           🛒 Panier Eco-Mix ({products.length} produits)
         </button>
         <div className="products">
@@ -273,7 +289,9 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
             const rp = getRealPrice(p.search, bestS.id, realPrices)
             return (<div key={i} className="product">
               <div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div>
-              <div className={`p-price ${rp != null ? 'real' : ''}`}>{rp != null ? rp.toFixed(2) : ((p.price||0)*(p.qty||1)).toFixed(2)} €</div>
+              <div className={`p-price ${rp != null ? 'real' : ''}`}>
+                {rp != null ? rp.toFixed(2) : ((p.price||0)*(p.qty||1)).toFixed(2)} €
+              </div>
             </div>)
           })}
         </div>
@@ -283,14 +301,18 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
     {!cp && (<div className="cp-box">
       <div className="cp-label">📍 Code postal pour les vrais prix</div>
       <div className="cp-row">
-        <input className="cp-input" type="text" placeholder="Ex: 92410" maxLength={5} value={cpInput} onChange={e => setCpInput(e.target.value)} />
-        <button className="cp-btn" onClick={() => { if (cpInput.length >= 4) { onSetCp(cpInput); onFetchPrices(products, cpInput) } }}>OK</button>
+        <input className="cp-input" type="text" placeholder="Ex: 92410" maxLength={5}
+          value={cpInput} onChange={e => setCpInput(e.target.value)} />
+        <button className="cp-btn" onClick={() => {
+          if (cpInput.length >= 4) { onSetCp(cpInput); onFetchPrices(products, cpInput) }
+        }}>OK</button>
       </div>
     </div>)}
 
     {cartProgress !== null && (() => {
       const s = store && store !== 'ecomix' ? STORES.find(x => x.id === store) : STORES.reduce((a,b) => a.factor < b.factor ? a : b)
-      return (<ProgressBar products={products} cur={cartProgress} storeName={s?.name||''} onClose={() => { _cartRunning=false; setCartProgress(null) }} />)
+      return <ProgressBar products={products} cur={cartProgress} storeName={s?.name||''}
+        onClose={() => { _cartRunning=false; setCartProgress(null) }} />
     })()}
   </>)
 }
@@ -304,33 +326,29 @@ export default function App() {
   const [realPrices, setRealPrices] = useState({})
   const [cp, setCp] = useState(() => localStorage.getItem('prix_malin_cp') || '')
 
-  const handleAnalyze = useCallback(async (text, b64Pdf, b64Img, imgType) => {
+  const handleAnalyze = useCallback(async (text, b64, mediaType) => {
     setLoading(true); setError(''); setSec('compare')
     try {
       let res
-      if (b64Img) {
-        const k = await getKey()
-        const d = await fetch('https://api.anthropic.com/v1/messages', {
-          method:'POST',
-          headers:{'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-          body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4000,system:SYS,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:imgType,data:b64Img}},{type:'text',text:FP}]}]})
-        }).then(r => r.json())
-        const t = d.content?.find(b => b.type==='text')?.text||''
-        const m = t.match(/\{[\s\S]*\}/); if(!m) throw new Error('Reponse invalide')
-        res = JSON.parse(m[0])
-      } else if (b64Pdf || !text || text.trim().split('\n').length <= 30) {
-        res = await callAI(text, b64Pdf)
+      if (b64 && mediaType) {
+        res = await analyzeImage(b64, mediaType)
+      } else if (text) {
+        res = await analyzeText(text)
       } else {
-        const lines = text.trim().split('\n'), mid = Math.floor(lines.length/2)
-        const [r1,r2] = await Promise.all([callAI(lines.slice(0,mid).join('\n'),null), callAI(lines.slice(mid).join('\n'),null)])
-        res = { products:[...(r1.products||[]),...(r2.products||[])], store:r1.store||r2.store, total:r1.total||r2.total, date:r1.date||r2.date }
+        throw new Error('Format non supporte')
       }
-      if (!res.products?.length) throw new Error('Aucun produit trouve')
-      setResults(prev => ({...prev, [catId]: res}))
+      if (!res.products?.length) throw new Error('Aucun produit trouve dans le ticket')
+      setResults(prev => ({ ...prev, [catId]: res }))
       setLoading(false)
       const cpVal = cp || localStorage.getItem('prix_malin_cp') || ''
-      if (cpVal) fetchRealPrices(res.products, cpVal).then(rp => { if(Object.keys(rp).length>0) setRealPrices(prev=>({...prev,...rp})) })
-    } catch(e) { setError(e.message); setLoading(false); setSec('import') }
+      if (cpVal) {
+        fetchRealPrices(res.products, cpVal).then(rp => {
+          if (Object.keys(rp).length > 0) setRealPrices(prev => ({ ...prev, ...rp }))
+        })
+      }
+    } catch(e) {
+      setError(e.message); setLoading(false); setSec('import')
+    }
   }, [catId, cp])
 
   const result = results[catId]
@@ -341,26 +359,32 @@ export default function App() {
       <div className="sub">Compare les prix · Economise partout</div>
       <div className="tabs">
         {CATS.map(c => (
-          <button key={c.id} className={`tab-btn ${c.id===catId?'active':''}`} onClick={() => { setCatId(c.id); setSec('import') }}>
+          <button key={c.id} className={`tab-btn ${c.id===catId?'active':''}`}
+            onClick={() => { setCatId(c.id); setSec('import') }}>
             <span className="tab-icon">{c.icon}</span><span>{c.label}</span>
           </button>
         ))}
       </div>
       <div className="sec-tabs">
         <button className={`sec-btn ${sec==='import'?'active':''}`} onClick={() => setSec('import')}>📥 Importer</button>
-        <button className={`sec-btn ${sec==='compare'&&result?'active':''}`} disabled={!result} onClick={() => result && setSec('compare')}>🔍 Comparer</button>
+        <button className={`sec-btn ${sec==='compare'&&result?'active':''}`} disabled={!result}
+          onClick={() => result && setSec('compare')}>🔍 Comparer</button>
       </div>
       {loading ? (
-        <div className="spinner"><div className="spin">⏳</div><div style={{fontSize:14,fontWeight:700,marginBottom:4}}>Analyse en cours...</div><div style={{fontSize:12,color:'rgba(240,237,232,.4)'}}>Quelques secondes...</div></div>
+        <div className="spinner">
+          <div className="spin">⏳</div>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>Analyse en cours...</div>
+          <div style={{fontSize:12,color:'rgba(240,237,232,.4)'}}>Quelques secondes...</div>
+        </div>
       ) : sec==='import' || !result ? (
         <ImportView onAnalyze={handleAnalyze} loading={loading} error={error} />
       ) : (
         <CompareView
-          result={result}
-          realPrices={realPrices}
-          cp={cp}
+          result={result} realPrices={realPrices} cp={cp}
           onSetCp={val => { setCp(val); localStorage.setItem('prix_malin_cp', val) }}
-          onFetchPrices={(products, cpVal) => fetchRealPrices(products, cpVal).then(rp => { if(Object.keys(rp).length>0) setRealPrices(prev=>({...prev,...rp})) })}
+          onFetchPrices={(prods, cpVal) => fetchRealPrices(prods, cpVal).then(rp => {
+            if (Object.keys(rp).length > 0) setRealPrices(prev => ({ ...prev, ...rp }))
+          })}
         />
       )}
     </div>
