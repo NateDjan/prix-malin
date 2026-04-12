@@ -1,5 +1,6 @@
-// Cart.js - écrit la queue dans localStorage + ouvre l'onglet Leclerc
+// Cart.js - écrit la queue dans localStorage
 // L'extension Claude in Chrome pilote l'onglet avec de vrais clics physiques
+// via le mécanisme de shortcut
 
 export const CART_SEL = {
   leclerc:     '.aWCRS310_Add',
@@ -23,7 +24,7 @@ export function startCart(storeId, products, driveConfig, onProgress) {
   const cfg = driveConfig[storeId]
   if (!cfg) return
 
-  // Stocker la queue dans localStorage pour que l'extension la lise
+  // Stocker la queue dans localStorage
   const queue = products.map(p => ({
     search: p.search,
     url: cfg.url(p.search)
@@ -33,10 +34,9 @@ export function startCart(storeId, products, driveConfig, onProgress) {
     storeId, queue, total: queue.length, done: 0, status: 'waiting'
   }))
 
-  // Ouvrir l'onglet Leclerc sur le 1er produit directement
+  // Ouvrir l'onglet Leclerc sur le 1er produit
   const w = window.open(cfg.url(products[0].search), '_cart_lec')
   if (!w) {
-    // Si popup bloqué, ouvrir quand même via lien
     const a = document.createElement('a')
     a.href = cfg.url(products[0].search)
     a.target = '_cart_lec'
@@ -47,7 +47,7 @@ export function startCart(storeId, products, driveConfig, onProgress) {
 
   onProgress(0)
 
-  // Poller localStorage pour mettre à jour la progress bar
+  // Poller localStorage pour la progress bar
   ;(async () => {
     while (_running) {
       await new Promise(r => setTimeout(r, 600))
