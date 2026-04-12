@@ -91,6 +91,32 @@ const CART_SEL = {
   lidl:        '.m-button--primary',
 }
 
+function buildBotPage(url, sel) {
+  const s = [
+    'var url=' + JSON.stringify(url) + ';',
+    'var sel=' + JSON.stringify(sel) + ';',
+    'function click(){',
+    '  var b=document.querySelector(sel);',
+    '  if(!b){var all=document.querySelectorAll("a,button");',
+    '    for(var j=0;j<all.length;j++){',
+    '      var t=(all[j].textContent+(all[j].getAttribute("aria-label")||"")).toLowerCase().trim();',
+    '      if((t.includes("ajouter au panier")||t==="acheter")&&!all[j].disabled&&!all[j].classList.contains("inactive")){b=all[j];break;}',
+    '    }',
+    '  }',
+    '  if(b&&!b.classList.contains("inactive")&&!b.classList.contains("WCTD_disabled")&&!b.disabled){',
+    '    b.click();',
+    '    try{window.opener&&window.opener.postMessage("cart_done","*");}catch(e){}',
+    '    return true;',
+    '  } return false;',
+    '}',
+    'window.onload=function(){',
+    '  if(!click()){var n=0;var iv=setInterval(function(){if(click()||++n>20){clearInterval(iv);if(n>20)try{window.opener&&window.opener.postMessage("cart_timeout","*");}catch(e){}}},400);}',
+    '};',
+    'window.location.href=url;',
+  ].join('');
+  return '<html><head></head><body><scr' + 'ipt>' + s + '</scri' + 'pt></body></html>';
+}
+
 function startCart(storeId, products, onProgress) {
   if (_cartRunning) return
   _cartRunning = true
@@ -99,38 +125,50 @@ function startCart(storeId, products, onProgress) {
 
   ;(async () => {
     let w = null
+    let _resolve = null
+
+    // Écouter les messages de la fenêtre bot
+    const handler = (e) => {
+      if ((e.data === 'cart_done' || e.data === 'cart_timeout') && _resolve) {
+        _resolve(e.data)
+      }
+    }
+    window.addEventListener('message', handler)
 
     for (let i = 0; i < products.length; i++) {
       if (!_cartRunning) break
       onProgress(i)
 
       const url = cfg.url(products[i].search)
-      const key = '_prx_' + i
+      const html = buildBotPage(url, sel)
 
-      // Stocker les infos pour la page bot
-      localStorage.setItem(key, JSON.stringify({ url, sel, done: false }))
-
-      // Ouvrir la page bot qui va gérer la navigation et le clic
-      const botUrl = '/cart-bot.html?key=' + encodeURIComponent(key)
+      // Ouvrir about:blank et écrire le bot dedans
       if (!w || w.closed) {
-        w = window.open(botUrl, '_leclerc')
-      } else {
-        w.location.href = botUrl
+        w = window.open('about:blank', '_leclerc')
       }
 
-      // Attendre que le bot signale la fin (max 15s)
-      const start = Date.now()
-      while (Date.now() - start < 15000) {
-        await new Promise(r => setTimeout(r, 400))
-        try {
-          const data = JSON.parse(localStorage.getItem(key) || '{}')
-          if (data.done) break
-        } catch(e) {}
+      try {
+        w.document.open()
+        w.document.write(html)
+        w.document.close()
+      } catch(e) {
+        // Si about:blank n'est plus accessible, rouvrir
+        try { w.close() } catch(e2) {}
+        w = window.open('about:blank', '_leclerc')
+        try { w.document.open(); w.document.write(html); w.document.close() } catch(e3) {}
       }
-      localStorage.removeItem(key)
-      await new Promise(r => setTimeout(r, 600))
+
+      // Attendre le message postMessage (max 15s)
+      await new Promise(r => {
+        _resolve = r
+        setTimeout(() => r('timeout'), 15000)
+      })
+      _resolve = null
+
+      await new Promise(r => setTimeout(r, 500))
     }
 
+    window.removeEventListener('message', handler)
     onProgress(products.length)
     _cartRunning = false
     try { w && w.close() } catch(e) {}
