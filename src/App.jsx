@@ -20,7 +20,7 @@ const CART_SEL = {
 }
 
 const SYS = 'Tu es un assistant qui extrait des produits de tickets de caisse. Reponds UNIQUEMENT avec du JSON valide, sans markdown, sans explication.'
-const FP = 'Lis TOUS les produits et prix de ce ticket sans en oublier aucun. IMPORTANT: price = prix TOTAL de la ligne, qty = toujours 1. JSON uniquement:\n{"products":[{"original":"texte brut","search":"nom normalise","qty":1,"price":0.00}],"store":"enseigne ou vide","total":0.00,"date":"JJ/MM/AAAA ou vide"}'
+const FP = 'Lis TOUS les produits et prix de ce ticket. IMPORTANT: price = prix TOTAL de la ligne, qty = toujours 1. Le champ search = nom court du produit UNIQUEMENT pour recherche supermarché (ex: Nutella, Beurre doux, Lait UHT) SANS grammage ni quantité ni code. JSON uniquement:\n{"products":[{"original":"texte brut","search":"nom court","qty":1,"price":0.00}],"store":"enseigne ou vide","total":0.00,"date":"JJ/MM/AAAA ou vide"}'
 
 async function callProxy(messages) {
   const r = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: SYS, messages }) })
