@@ -9,21 +9,7 @@ export const CART_SEL = {
 }
 
 let _running = false
-
 export function stopCart() { _running = false }
-
-function openViaLink(url, target) {
-  // Ouvrir via un vrai lien <a> — contourne le popup blocker
-  const a = document.createElement('a')
-  a.href = url
-  a.target = target || '_cart_pm'
-  a.rel = 'noopener'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  // Retourner une référence window via name
-  return window.open('', target || '_cart_pm')
-}
 
 export function startCart(storeId, products, driveConfig, onProgress) {
   if (_running) return
@@ -31,7 +17,12 @@ export function startCart(storeId, products, driveConfig, onProgress) {
   const cfg = driveConfig[storeId]
   if (!cfg) return
   const sel = CART_SEL[storeId] || '.aWCRS310_Add'
-  const winName = '_cart_leclerc'
+  const winName = '_cart_lec'
+
+  // Stocker les produits et le sélecteur dans localStorage
+  // pour que la page Leclerc Drive puisse y accéder via window.opener
+  // NON - cross-origin
+  // On utilise le hash de l'URL pour passer les infos
 
   ;(async () => {
     let resolveMsg = null
@@ -47,39 +38,22 @@ export function startCart(storeId, products, driveConfig, onProgress) {
       onProgress(i)
       const url = cfg.url(products[i].search)
 
-      if (i === 0) {
-        // Premier produit : ouvrir via lien <a> avec target nommé
-        const a = document.createElement('a')
-        a.href = url
-        a.target = winName
-        a.rel = 'noopener'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-      } else {
-        // Produits suivants : référencer la même fenêtre par son nom
-        const w = window.open('', winName)
-        if (w && !w.closed) {
-          w.location.href = url
-        } else {
-          // Fenêtre fermée, réouvrir
-          const a = document.createElement('a')
-          a.href = url
-          a.target = winName
-          a.rel = 'noopener'
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
-        }
-      }
+      // Créer un lien SANS rel="noopener" pour garder window.opener
+      const a = document.createElement('a')
+      a.href = url
+      a.target = winName
+      // PAS de rel="noopener" — permet window.opener.postMessage
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
 
-      // Attendre postMessage cart_done (max 15s)
+      // Attendre postMessage (max 15s)
       await new Promise(r => {
         resolveMsg = r
         setTimeout(() => r('timeout'), 15000)
       })
       resolveMsg = null
-      await new Promise(r => setTimeout(r, 500))
+      await new Promise(r => setTimeout(r, 600))
     }
 
     window.removeEventListener('message', msgHandler)
