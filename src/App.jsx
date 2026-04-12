@@ -82,16 +82,16 @@ const DRIVE = {
   lidl:        { note: 'Disponible sur lidl.fr',                            url: q => `https://www.lidl.fr/recherche?q=${encodeURIComponent(q)}` },
 }
 
-function ProgressBar({ products, cur, storeName, onClose }) {
+function ProgressBar({ total, cur, storeName, onClose }) {
   if (cur === null) return null
-  const done = cur >= products.length
-  const pct = done ? 100 : Math.round(cur / products.length * 100)
-  const prodName = !done && products[cur] ? products[cur].search : ''
+  const done = cur >= total
+  const pct = total > 0 ? (done ? 100 : Math.round(cur / total * 100)) : 0
+  const prodName = ''
   return (
     <div className="prog-bar" style={{background:'rgba(255,255,255,0.05)',borderRadius:12,padding:'12px 16px',margin:'16px 0'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
         <span style={{fontSize:13,fontWeight:700,color:'#5BF5A8'}}>
-          🛒 {cur}/{products.length} · {storeName}
+          🛒 {cur}/{total} · {storeName}
         </span>
         <button onClick={onClose} style={{background:'transparent',border:'none',color:'rgba(240,237,232,0.4)',cursor:'pointer',fontSize:12}}>Annuler</button>
       </div>
@@ -147,6 +147,7 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
   const [store, setStore] = useState(null)
   const [cpInput, setCpInput] = useState('')
   const [cartProgress, setCartProgress] = useState(null)
+  const [cartTotal, setCartTotal] = useState(0)
   const { products, store: storeName, total, date } = result
   const base = products.reduce((a,p)=>a+(p.price||0),0)
   const ecoAmt = ecoTotal(products, realPrices)
@@ -176,20 +177,20 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
     </div>
     {store&&store!=='ecomix'&&currentStore&&(<div>
       <div className="notice"><div className="notice-title">🔐 Avant de démarrer</div><div className="notice-sub">{DRIVE[store]?.note}</div></div>
-      <button className="btn-cart" style={{background:currentStore.color}} onClick={()=>{setCartProgress(0);startCart(store,products,DRIVE,cur=>setCartProgress(cur))}}>
+      <button className="btn-cart" style={{background:currentStore.color}} onClick={()=>{setCartProgress(0);startCart(store,products,DRIVE,cur=>setCartProgress(cur));setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||products.length)},100)}}>
         🛒 Remplir panier {currentStore.name} ({products.length} produits)
       </button>
       <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,store,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
     </div>)}
     {store==='ecomix'&&(()=>{ const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b); return (<div>
       <div className="notice"><div className="notice-title">🌿 Eco-Mix</div><div className="notice-sub">Chaque produit dans l&apos;enseigne la moins chère.</div></div>
-      <button className="btn-cart" style={{background:'linear-gradient(135deg,#5BF5A8,#00C97A)',color:'#0A0A0F'}} onClick={()=>{setCartProgress(0);startCart(bestS.id,products,DRIVE,cur=>setCartProgress(cur))}}>
+      <button className="btn-cart" style={{background:'linear-gradient(135deg,#5BF5A8,#00C97A)',color:'#0A0A0F'}} onClick={()=>{setCartProgress(0);startCart(bestS.id,products,DRIVE,cur=>setCartProgress(cur));setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||products.length)},100)}}>
         🛒 Remplir panier Eco-Mix ({products.length} produits)
       </button>
       <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,bestS.id,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
     </div>) })()}
     {!cp&&(<div className="cp-box"><div className="cp-label">📍 Code postal pour les vrais prix</div><div className="cp-row"><input className="cp-input" type="text" placeholder="Ex: 92410" maxLength={5} value={cpInput} onChange={e=>setCpInput(e.target.value)}/><button className="cp-btn" onClick={()=>{if(cpInput.length>=4){onSetCp(cpInput);onFetchPrices(products,cpInput)}}}>OK</button></div></div>)}
-    {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar products={products} cur={cartProgress} storeName={s?.name||''} onClose={()=>{stopCart();setCartProgress(null)}} /> })()}
+    {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar total={cartTotal||products.length} cur={cartProgress} storeName={s?.name||''} onClose={()=>{stopCart();setCartProgress(null)}} /> })()}
   </>)
 }
 
