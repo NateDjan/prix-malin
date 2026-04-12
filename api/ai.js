@@ -5,14 +5,14 @@ export default async function handler(req) {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   try {
     const { messages, system } = await req.json();
-    const key = process.env.XAI_API_KEY;
-    if (!key) return new Response(JSON.stringify({ error: "XAI_API_KEY manquante" }), { status: 500, headers: cors });
+    const key = process.env.GROQ_API_KEY;
+    if (!key) return new Response(JSON.stringify({ error: "GROQ_API_KEY manquante" }), { status: 500, headers: cors });
 
-    const r = await fetch("https://api.x.ai/v1/chat/completions", {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
       body: JSON.stringify({
-        model: "grok-3-mini-beta",
+        model: "llama-3.3-70b-versatile",
         temperature: 0,
         max_tokens: 4000,
         messages: [
@@ -24,7 +24,7 @@ export default async function handler(req) {
 
     const d = await r.json();
     if (!r.ok) return new Response(JSON.stringify({ 
-      error: d.error?.message || d.error?.code || "Erreur xAI",
+      error: d.error?.message || "Erreur Groq",
       detail: d
     }), { status: 500, headers: cors });
     
