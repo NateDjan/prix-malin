@@ -101,6 +101,23 @@ function ProgressBar({ products, cur, storeName, onClose, onContinue }) {
   )
   const done = cur >= products.length
   const pct = done ? 100 : Math.round(cur / products.length * 100)
+  const prodName = !done && products[cur] ? products[cur].search : ''
+  return (
+    <div className="prog-bar" style={{background:'rgba(255,255,255,0.05)',borderRadius:12,padding:'12px 16px',margin:'16px 0'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+        <span style={{fontSize:13,fontWeight:700,color:'#5BF5A8'}}>
+          🛒 {cur}/{products.length} · {storeName}
+        </span>
+        <button onClick={onClose} style={{background:'transparent',border:'none',color:'rgba(240,237,232,0.4)',cursor:'pointer',fontSize:12}}>Annuler</button>
+      </div>
+      {prodName && <div style={{fontSize:12,color:'rgba(240,237,232,0.5)',marginBottom:6}}>📦 {prodName}</div>}
+      <div style={{background:'rgba(255,255,255,0.1)',borderRadius:4,height:6}}>
+        <div style={{background:'#5BF5A8',height:6,borderRadius:4,width:pct+'%',transition:'width 0.5s'}}/>
+      </div>
+      {done && <div style={{fontSize:12,color:'#5BF5A8',marginTop:6,textAlign:'center'}}>✅ Panier rempli !</div>}
+    </div>
+  )
+}
 
 function ImportView({ onAnalyze, loading, error }) {
   const [text, setText] = useState('')
