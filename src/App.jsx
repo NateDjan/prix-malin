@@ -45,27 +45,29 @@ async function callProxy(messages) {
 }
 
 async function analyzeText(text) {
-  const lines = text.trim().split('\n')
-  if (lines.length <= 40) {
-    return callProxy([{ role: 'user', content: text + '\n\n' + FP }])
+  const lines = text.trim().split('\n').filter(l => l.trim())
+  if (lines.length <= 50) {
+    return callProxy([{ role: 'user', content: 'Extrait TOUS les produits sans exception.\n\n' + text + '\n\n' + FP }])
   }
-  const mid = Math.floor(lines.length / 2)
-  const [r1, r2] = await Promise.all([
-    callProxy([{ role: 'user', content: lines.slice(0, mid).join('\n') + '\n\n' + FP }]),
-    callProxy([{ role: 'user', content: lines.slice(mid).join('\n') + '\n\n' + FP }])
+  // Ticket long : découper en 3 parties
+  const third = Math.floor(lines.length / 3)
+  const [r1, r2, r3] = await Promise.all([
+    callProxy([{ role: 'user', content: lines.slice(0, third).join('\n') + '\n\n' + FP }]),
+    callProxy([{ role: 'user', content: lines.slice(third, third*2).join('\n') + '\n\n' + FP }]),
+    callProxy([{ role: 'user', content: lines.slice(third*2).join('\n') + '\n\n' + FP }])
   ])
   return {
-    products: [...(r1.products || []), ...(r2.products || [])],
-    store: r1.store || r2.store || '',
-    total: r1.total || r2.total || 0,
-    date: r1.date || r2.date || ''
+    products: [...(r1.products||[]), ...(r2.products||[]), ...(r3.products||[])],
+    store: r1.store || r2.store || r3.store || '',
+    total: r1.total || r2.total || r3.total || 0,
+    date: r1.date || r2.date || r3.date || ''
   }
 }
 
 async function analyzeImage(b64, mediaType) {
   return callProxy([{ role: 'user', content: [
     { type: 'image_url', image_url: { url: `data:${mediaType};base64,${b64}` } },
-    { type: 'text', text: FP }
+    { type: 'text', text: 'Lis TOUS les produits et prix de ce ticket de caisse. Extrait chaque ligne produit sans en oublier aucune. ' + FP }
   ]}])
 }
 
