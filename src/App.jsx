@@ -114,71 +114,102 @@ function ecoTotal(products, realPrices) {
 // --- Panier auto ---
 let _cartRunning = false
 
-// Selecteurs "Ajouter au panier" par enseigne (testés et confirmés)
+// Panier automatique via ouverture sequentielle d'onglets
 const CART_SELECTORS = {
-  leclerc:     ['.aWCRS310_Add'],
-  carrefour:   ['button[aria-label*="Ajouter le produit"]', '.c-button--tone-main'],
+  leclerc:     ['.aWCRS310_Add', 'a[class*="Add"]', 'a[href*="ajout"]'],
+  carrefour:   ['button[aria-label*="Ajouter le produit"]'],
   intermarche: ['.add-to-cart-button', 'button[data-testid="add-to-cart"]'],
   auchan:      ['.add-to-cart', 'button[aria-label*="Ajouter"]'],
-  monoprix:    ['.btn-addtocart', 'button[data-action*="add"]'],
-  lidl:        ['.m-button--primary', 'button[class*="add"]'],
+  monoprix:    ['.btn-addtocart'],
+  lidl:        ['.m-button--primary'],
 };
 
-async function addToCartInWindow(w, storeId) {
-  if (!w || w.closed) return false;
-  try {
-    await new Promise(r => setTimeout(r, 4000));
-    if (w.closed) return false;
-    const specificSelectors = CART_SELECTORS[storeId] || [];
-    w.eval(`
-      (function() {
-        const specific = ${JSON.stringify(specificSelectors)};
-        // Essayer les selecteurs specifiques a l'enseigne en premier
-        for (const sel of specific) {
-          const btn = document.querySelector(sel);
-          if (btn && !btn.disabled) { btn.click(); return true; }
+// Script injecte dans chaque onglet via URL hash + script tag
+function getAutoClickScript(storeId) {
+  const sels = JSON.stringify(CART_SELECTORS[storeId] || []);
+  return encodeURIComponent(`
+    (function autoClick() {
+      if (window._prxDone) return;
+      var sels = ${sels};
+      function tryClick() {
+        for (var i=0; i<sels.length; i++) {
+          var btn = document.querySelector(sels[i]);
+          if (btn && !btn.disabled && !btn.classList.contains('inactive')) {
+            btn.click(); window._prxDone=true; return true;
+          }
         }
-        // Fallback universel
-        const allEls = [...document.querySelectorAll('a,button,[role="button"]')];
-        const btn = allEls.find(b => {
-          const t = (b.textContent + b.getAttribute('aria-label') + '').trim().toLowerCase();
-          return (t.includes('ajouter au panier') || t === 'acheter') && !b.disabled && !b.classList.contains('inactive');
-        });
-        if (btn) { btn.click(); return true; }
+        var all = document.querySelectorAll('a,button');
+        for (var j=0; j<all.length; j++) {
+          var t=(all[j].textContent+all[j].getAttribute('aria-label')+'').toLowerCase().trim();
+          if ((t==='ajouter au panier'||t==='acheter')&&!all[j].disabled&&!all[j].classList.contains('inactive')) {
+            all[j].click(); window._prxDone=true; return true;
+          }
+        }
         return false;
-      })()
-    `);
-    await new Promise(r => setTimeout(r, 800));
-    return true;
-  } catch(e) { return false; }
+      }
+      // Essayer immediatement puis toutes les 500ms pendant 8s
+      if (!tryClick()) {
+        var n=0; var iv=setInterval(function(){ if(tryClick()||++n>16) clearInterval(iv); }, 500);
+      }
+    })()
+  `);
 }
 
+let _cartRunning = false
 function startCart(storeId, products, onProgress) {
   if (_cartRunning) return; _cartRunning = true
   const cfg = DRIVE[storeId]; if (!cfg) return
   ;(async () => {
-    // Ouvrir le premier produit
-    const w = window.open(cfg.url(products[0].search), '_cart')
-    onProgress(0)
-    await addToCartInWindow(w, storeId)
-    
-    for (let i = 1; i < products.length; i++) {
+    for (let i = 0; i < products.length; i++) {
       if (!_cartRunning) break
       onProgress(i)
+      // Ouvrir dans un nouvel onglet avec le script auto-clic dans le hash
+      const script = getAutoClickScript(storeId)
+      const url = cfg.url(products[i].search)
+      const w = window.open(url, '_blank')
+      // Attendre que la page charge puis injecter
+      await new Promise(r => setTimeout(r, 1500))
       if (w && !w.closed) {
-        w.location.href = cfg.url(products[i].search)
-      } else {
-        const w2 = window.open(cfg.url(products[i].search), '_cart')
-        await addToCartInWindow(w2, storeId)
-        continue
+        try {
+          // Attendre le readyState complete via polling
+          let waited = 0
+          while (waited < 6000) {
+            try { if (w.document.readyState === 'complete') break } catch(e) { break }
+            await new Promise(r => setTimeout(r, 300))
+            waited += 300
+          }
+          await new Promise(r => setTimeout(r, 800))
+          // Injecter le clic
+          try {
+            const sels = CART_SELECTORS[storeId] || []
+            let clicked = false
+            for (const sel of sels) {
+              const btn = w.document.querySelector(sel)
+              if (btn && !btn.disabled && !btn.classList.contains('inactive')) {
+                btn.click(); clicked = true; break
+              }
+            }
+            if (!clicked) {
+              const all = [...w.document.querySelectorAll('a,button')]
+              const btn = all.find(b => {
+                const t = (b.textContent + b.getAttribute('aria-label') + '').toLowerCase().trim()
+                return (t === 'ajouter au panier' || t === 'acheter') && !b.disabled && !b.classList.contains('inactive')
+              })
+              if (btn) btn.click()
+            }
+          } catch(e) { /* cross-origin: fermer et continuer */ }
+        } catch(e) {}
+        // Fermer l'onglet apres 3s
+        await new Promise(r => setTimeout(r, 2500))
+        try { w.close() } catch(e) {}
       }
-      await addToCartInWindow(w, storeId)
+      await new Promise(r => setTimeout(r, 500))
     }
     onProgress(products.length); _cartRunning = false
   })()
 }
 
-// --- Composants ---
+
 function ProgressBar({ products, cur, storeName, onClose }) {
   if (cur === null) return null
   const done = cur >= products.length
