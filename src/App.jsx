@@ -92,83 +92,49 @@ const CART_SEL = {
 }
 
 function startCart(storeId, products, onProgress) {
-  if (_cartRunning) return;
-  _cartRunning = true;
-  const cfg = DRIVE[storeId]; if (!cfg) return;
-  const sel = CART_SEL[storeId] || '.aWCRS310_Add';
+  if (_cartRunning) return
+  _cartRunning = true
+  const cfg = DRIVE[storeId]; if (!cfg) return
+  const sel = CART_SEL[storeId] || '.aWCRS310_Add'
 
   ;(async () => {
-    // Ouvrir about:blank — même origine, on peut écrire dedans
-    let w = window.open('about:blank', '_leclerc');
+    let w = null
 
     for (let i = 0; i < products.length; i++) {
-      if (!_cartRunning) break;
-      onProgress(i);
+      if (!_cartRunning) break
+      onProgress(i)
 
-      const url = cfg.url(products[i].search);
+      const url = cfg.url(products[i].search)
+      const key = '_prx_' + i
 
-      // Écrire dans la fenêtre about:blank un script qui :
-      // 1. Navigue vers l'URL du produit
-      // 2. Clique le bouton dès que la page est chargée
-      // 3. Signale la fin via localStorage
-      const key = '_prx_done_' + i;
-      localStorage.removeItem(key);
+      // Stocker les infos pour la page bot
+      localStorage.setItem(key, JSON.stringify({ url, sel, done: false }))
 
-      try {
-        w.document.open();
-        w.document.write('<html><head></head><body><script>' +
-          'var _sel = ' + JSON.stringify(sel) + ';' +
-          'var _key = ' + JSON.stringify(key) + ';' +
-          'var _url = ' + JSON.stringify(url) + ';' +
-          'function tryClick() {' +
-          '  var btn = document.querySelector(_sel);' +
-          '  if (!btn) {' +
-          '    var all = document.querySelectorAll("a,button");' +
-          '    for(var j=0;j<all.length;j++){' +
-          '      var t=(all[j].textContent+(all[j].getAttribute("aria-label")||""||"")).toLowerCase().trim();' +
-          '      if((t==="ajouter au panier"||t==="acheter")&&!all[j].disabled&&!all[j].classList.contains("inactive")){btn=all[j];break;}' +
-          '    }' +
-          '  }' +
-          '  if (btn && !btn.classList.contains("inactive") && !btn.classList.contains("WCTD_disabled") && !btn.disabled) {' +
-          '    btn.click();' +
-          '    try{window.opener&&window.opener.localStorage.setItem(_key,"1");}catch(e){}' +
-          '    return true;' +
-          '  }' +
-          '  return false;' +
-          '}' +
-          'window.onload = function() {' +
-          '  if (!tryClick()) {' +
-          '    var n=0; var iv=setInterval(function(){ if(tryClick()||++n>20){clearInterval(iv);if(n>20)try{window.opener&&window.opener.localStorage.setItem(_key,"timeout");}catch(e){}} }, 400);' +
-          '  }' +
-          '};' +
-          'window.location.href = _url;' +
-          '<\/script></body></html>'
-        );
-        w.document.close();
-      } catch(e) {
-        // Fenêtre bloquée — ouvrir directement
-        try { w.close(); } catch(e2) {}
-        w = window.open(url, '_leclerc');
+      // Ouvrir la page bot qui va gérer la navigation et le clic
+      const botUrl = '/cart-bot.html?key=' + encodeURIComponent(key)
+      if (!w || w.closed) {
+        w = window.open(botUrl, '_leclerc')
+      } else {
+        w.location.href = botUrl
       }
 
-      // Attendre le signal localStorage (max 12s)
-      const start = Date.now();
-      while (Date.now() - start < 12000) {
-        await new Promise(r => setTimeout(r, 400));
-        const val = localStorage.getItem(key);
-        if (val === '1' || val === 'timeout') break;
+      // Attendre que le bot signale la fin (max 15s)
+      const start = Date.now()
+      while (Date.now() - start < 15000) {
+        await new Promise(r => setTimeout(r, 400))
+        try {
+          const data = JSON.parse(localStorage.getItem(key) || '{}')
+          if (data.done) break
+        } catch(e) {}
       }
-      localStorage.removeItem(key);
-
-      // Délai entre produits pour ne pas surcharger Leclerc
-      await new Promise(r => setTimeout(r, 800));
+      localStorage.removeItem(key)
+      await new Promise(r => setTimeout(r, 600))
     }
 
-    onProgress(products.length);
-    _cartRunning = false;
-    // Fermer la fenêtre à la fin
-    try { w.close(); } catch(e) {}
-  })();
+    onProgress(products.length)
+    _cartRunning = false
+    try { w && w.close() } catch(e) {}
+  })()
 }
 
 function ProgressBar({ products, cur, storeName, onClose }) {
