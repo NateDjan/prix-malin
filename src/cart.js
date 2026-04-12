@@ -9,83 +9,111 @@ export const CART_SEL = {
 }
 
 let _running = false
-let _cartWin = null
+let _win = null
 
 export function stopCart() {
   _running = false
-  try { if (_cartWin) _cartWin.close() } catch(e) {}
-  _cartWin = null
+  try { if (_win && !_win.closed) _win.close() } catch(e) {}
+  _win = null
 }
 
-// Appelée depuis le bouton "Continuer" après connexion
-export function continueCart(products, sel, onProgress) {
-  const w = _cartWin
-  if (!w || w.closed) { _running = false; return }
+// Attendre que la fenêtre soit sur la bonne URL (avec TexteRecherche)
+async function waitForPage(win, expectedUrl, timeoutMs = 15000) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    await new Promise(r => setTimeout(r, 400))
+    try {
+      if (win.closed) return false
+      const url = win.location.href
+      const ready = win.document.readyState === 'complete'
+      if (ready && url.includes('TexteRecherche')) return true
+    } catch(e) {}
+  }
+  return false
+}
+
+// Cliquer le bouton panier avec retries
+async function clickAddToCart(win, sel) {
+  for (let t = 0; t < 20; t++) {
+    try {
+      const btn = win.document.querySelector(sel)
+      if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled') && !btn.disabled) {
+        btn.click()
+        return true
+      }
+      // Fallback texte
+      const all = win.document.querySelectorAll('a,button')
+      for (const b of all) {
+        const txt = (b.textContent + (b.getAttribute('aria-label')||'')).toLowerCase().trim()
+        if ((txt.includes('ajouter au panier') || txt === 'acheter') && !b.disabled && !b.classList.contains('inactive')) {
+          b.click()
+          return true
+        }
+      }
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 400))
+  }
+  return false
+}
+
+// Appelée quand l'utilisateur clique "Continuer" après s'être connecté
+export function continueCart(queue, sel, onProgress) {
+  if (!_win || _win.closed) { return }
+  _running = true
 
   ;(async () => {
-    for (let i = 0; i < products.length; i++) {
+    for (let i = 0; i < queue.length; i++) {
       if (!_running) break
       onProgress(i)
 
-      // Naviguer vers la page de recherche du produit
-      try { w.location.href = products[i].url } catch(e) { break }
+      const { url } = queue[i]
+      
+      // Naviguer
+      try { _win.location.href = url } catch(e) { break }
 
-      // Attendre la page
-      let ready = false
-      for (let t = 0; t < 30; t++) {
-        await new Promise(r => setTimeout(r, 500))
-        try {
-          if (w.document.readyState === 'complete' && w.location.href.includes('TexteRecherche')) {
-            ready = true; break
-          }
-        } catch(e) {}
-      }
-      if (!ready) { onProgress(i); continue }
+      // Attendre la page produit
+      const ok = await waitForPage(_win, url)
+      if (!ok || _win.closed) { onProgress(i); continue }
 
-      await new Promise(r => setTimeout(r, 1200))
+      // Délai supplémentaire pour le JS Leclerc
+      await new Promise(r => setTimeout(r, 1000))
 
       // Cliquer
-      for (let t = 0; t < 12; t++) {
-        try {
-          const btn = w.document.querySelector(sel)
-          if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled') && !btn.disabled) {
-            btn.click()
-            break
-          }
-        } catch(e) {}
-        await new Promise(r => setTimeout(r, 400))
-      }
+      const clicked = await clickAddToCart(_win, sel)
+      console.log('[Cart] produit', i+1, clicked ? 'ajouté' : 'ÉCHEC')
 
       onProgress(i + 1)
-      await new Promise(r => setTimeout(r, 600))
+      await new Promise(r => setTimeout(r, 800))
     }
 
-    onProgress(products.length)
+    onProgress(queue.length)
     _running = false
+    try { _win.close() } catch(e) {}
+    _win = null
   })()
 }
 
 export function startCart(storeId, products, driveConfig, onProgress) {
   if (_running) return
-  _running = true
   const cfg = driveConfig[storeId]
   if (!cfg) return
 
-  // Ouvrir l'onglet Leclerc (page accueil pour que les cookies soient là)
-  const homeUrl = storeId === 'leclerc'
-    ? 'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/default.aspx'
-    : cfg.url(products[0].search)
-
-  const w = window.open(homeUrl, '_cart_lec')
-  if (!w) { _running = false; return }
-  _cartWin = w
-
-  // Stocker dans window pour que le bouton "Continuer" y accède
+  const sel = CART_SEL[storeId] || '.aWCRS310_Add'
   const queue = products.map(p => ({ search: p.search, url: cfg.url(p.search) }))
-  window._cartQueue = queue
-  window._cartSel = CART_SEL[storeId] || '.aWCRS310_Add'
-  window._cartOnProgress = onProgress
 
-  // Signaler à l'app qu'on attend la connexion
-  onProgress(-1)  // -1 = état "attente connexion"
+  // Ouvrir la page d'accueil du drive (pas de recherche) pour que les cookies soient là
+  const homeUrls = {
+    leclerc: 'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/default.aspx',
+  }
+  const openUrl = homeUrls[storeId] || queue[0].url
+
+  const w = window.open(openUrl, '_cart_pm')
+  if (!w) { onProgress(null); return }
+  
+  _win = w
+  window._cartQueue = queue
+  window._cartSel = sel
+
+  // Signaler l'état "attente connexion" (cur = -1)
+  onProgress(-1)
 }
