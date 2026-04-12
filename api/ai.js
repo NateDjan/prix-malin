@@ -9,23 +9,22 @@ export default async function handler(req) {
     if (!key) return new Response(JSON.stringify({ error: "GROQ_API_KEY manquante" }), { status: 500, headers: cors });
 
     // Detecter si le message contient une image
-    const hasImage = messages.some(m => 
+    const hasImage = messages.some(m =>
       Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
     );
 
-    // Choisir le bon modele : vision pour images, texte pour le reste
-    const model = hasImage ? "llama-3.2-90b-vision-preview" : "llama-3.3-70b-versatile";
+    // Llama 4 Scout supporte texte + images, Llama 3.3 70B pour texte seul
+    const model = hasImage
+      ? "meta-llama/llama-4-scout-17b-16e-instruct"
+      : "llama-3.3-70b-versatile";
 
-    // Construire les messages : system comme premier message user si vision
-    // car llama vision n'a pas de system prompt separé
+    // Pour Llama 4 Scout avec images : system prompt dans messages
     let msgs;
     if (hasImage) {
-      // Pour vision : inclure le system dans le premier message
+      // Llama 4 supporte le system prompt separé
       msgs = [
-        { role: "user", content: [
-          { type: "text", text: (system || "") + "\n\n" + (typeof messages[0].content === 'string' ? messages[0].content : "") },
-          ...messages.flatMap(m => Array.isArray(m.content) ? m.content.filter(c => c.type === 'image_url') : [])
-        ]}
+        { role: "system", content: system || "Reponds uniquement en JSON valide." },
+        ...messages
       ];
     } else {
       msgs = [
@@ -41,12 +40,12 @@ export default async function handler(req) {
     });
 
     const d = await r.json();
-    if (!r.ok) return new Response(JSON.stringify({ 
+    if (!r.ok) return new Response(JSON.stringify({
       error: d.error?.message || "Erreur Groq", detail: d
     }), { status: 500, headers: cors });
-    
-    return new Response(JSON.stringify({ 
-      text: d.choices?.[0]?.message?.content || "" 
+
+    return new Response(JSON.stringify({
+      text: d.choices?.[0]?.message?.content || ""
     }), { headers: cors });
   } catch(err) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: cors });
