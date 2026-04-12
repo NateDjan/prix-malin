@@ -114,46 +114,41 @@ function ecoTotal(products, realPrices) {
 // --- Panier auto ---
 let _cartRunning = false
 
-// Injecter un script dans la fenetre du drive pour cliquer "Ajouter au panier"
+// Selecteurs "Ajouter au panier" par enseigne (testés et confirmés)
+const CART_SELECTORS = {
+  leclerc:     ['.aWCRS310_Add'],
+  carrefour:   ['button[aria-label*="Ajouter le produit"]', '.c-button--tone-main'],
+  intermarche: ['.add-to-cart-button', 'button[data-testid="add-to-cart"]'],
+  auchan:      ['.add-to-cart', 'button[aria-label*="Ajouter"]'],
+  monoprix:    ['.btn-addtocart', 'button[data-action*="add"]'],
+  lidl:        ['.m-button--primary', 'button[class*="add"]'],
+};
+
 async function addToCartInWindow(w, storeId) {
   if (!w || w.closed) return false;
   try {
-    // Attendre que la page soit chargee
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 4000));
     if (w.closed) return false;
-    // Injecter le script qui clique sur le premier bouton Ajouter au panier
+    const specificSelectors = CART_SELECTORS[storeId] || [];
     w.eval(`
       (function() {
-        // Selecteurs pour differentes enseignes
-        const selectors = [
-          '[aria-label*="Ajouter"]',
-          'button[aria-label*="panier"]',
-          '.add-to-cart', '.addtocart', '.btn-add-cart',
-          'button.addArticle', 'button[data-action="add"]',
-          '.c-button--tone-main',
-          'button:not([disabled])'
-        ];
-        for (const sel of selectors) {
-          const btns = document.querySelectorAll(sel);
-          for (const btn of btns) {
-            const txt = (btn.textContent + btn.getAttribute('aria-label') + '').toLowerCase();
-            if (txt.includes('ajouter') || txt.includes('acheter') || txt.includes('panier') || txt.includes('add')) {
-              btn.click();
-              return true;
-            }
-          }
+        const specific = ${JSON.stringify(specificSelectors)};
+        // Essayer les selecteurs specifiques a l'enseigne en premier
+        for (const sel of specific) {
+          const btn = document.querySelector(sel);
+          if (btn && !btn.disabled) { btn.click(); return true; }
         }
-        // Fallback: cliquer le premier bouton visible qui n'est pas de navigation
-        const allBtns = [...document.querySelectorAll('button')];
-        const addBtn = allBtns.find(b => {
-          const t = b.textContent.trim().toLowerCase();
-          return (t === 'acheter' || t === 'ajouter' || t.includes('panier')) && !b.disabled;
+        // Fallback universel
+        const allEls = [...document.querySelectorAll('a,button,[role="button"]')];
+        const btn = allEls.find(b => {
+          const t = (b.textContent + b.getAttribute('aria-label') + '').trim().toLowerCase();
+          return (t.includes('ajouter au panier') || t === 'acheter') && !b.disabled && !b.classList.contains('inactive');
         });
-        if (addBtn) { addBtn.click(); return true; }
+        if (btn) { btn.click(); return true; }
         return false;
       })()
     `);
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 800));
     return true;
   } catch(e) { return false; }
 }
@@ -173,7 +168,9 @@ function startCart(storeId, products, onProgress) {
       if (w && !w.closed) {
         w.location.href = cfg.url(products[i].search)
       } else {
-        window.open(cfg.url(products[i].search), '_cart')
+        const w2 = window.open(cfg.url(products[i].search), '_cart')
+        await addToCartInWindow(w2, storeId)
+        continue
       }
       await addToCartInWindow(w, storeId)
     }
