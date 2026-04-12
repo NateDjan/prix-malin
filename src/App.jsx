@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import { startCart, stopCart, continueCart } from './cart.js'
+import { startCart, stopCart } from './cart.js'
 
 const STORES = [
   { id: 'leclerc',     name: 'E.Leclerc',   letter: 'E', color: '#0052CC', factor: 1.00 },
@@ -82,23 +82,8 @@ const DRIVE = {
   lidl:        { note: 'Disponible sur lidl.fr',                            url: q => `https://www.lidl.fr/recherche?q=${encodeURIComponent(q)}` },
 }
 
-function ProgressBar({ products, cur, storeName, onClose, onContinue }) {
+function ProgressBar({ products, cur, storeName, onClose }) {
   if (cur === null) return null
-  // État -1 = attente connexion utilisateur
-  if (cur === -1) return (
-    <div className="prog-bar" style={{background:'rgba(91,245,168,0.08)',border:'1px solid rgba(91,245,168,0.4)',borderRadius:12,padding:'12px 16px',margin:'16px 0',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-      <span style={{fontSize:20}}>🔐</span>
-      <span style={{flex:1,fontSize:13,color:'rgba(240,237,232,0.8)'}}>
-        Connecte-toi sur <b>{storeName}</b> dans l'onglet qui vient de s'ouvrir, puis clique <b>Continuer</b>
-      </span>
-      <button onClick={onContinue} style={{background:'#5BF5A8',color:'#0A0A0F',border:'none',borderRadius:8,padding:'8px 16px',fontWeight:700,cursor:'pointer',fontSize:13}}>
-        ✅ Continuer
-      </button>
-      <button onClick={onClose} style={{background:'transparent',color:'rgba(240,237,232,0.5)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,padding:'8px 12px',cursor:'pointer',fontSize:13}}>
-        Annuler
-      </button>
-    </div>
-  )
   const done = cur >= products.length
   const pct = done ? 100 : Math.round(cur / products.length * 100)
   const prodName = !done && products[cur] ? products[cur].search : ''
