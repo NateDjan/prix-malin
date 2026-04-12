@@ -82,73 +82,93 @@ function ecoTotal(products, realPrices) {
 
 let _cartRunning = false
 
-// Ouvre toutes les fenêtres en parallèle depuis le clic utilisateur
-// Chaque fenêtre attend son chargement puis clique .aWCRS310_Add
-// Puis on ferme tout sauf la 1ère
+const CART_SEL = {
+  leclerc:     '.aWCRS310_Add',
+  carrefour:   'button[aria-label*="Ajouter le produit"]',
+  intermarche: '.add-to-cart-button',
+  auchan:      '.add-to-cart',
+  monoprix:    '.btn-addtocart',
+  lidl:        '.m-button--primary',
+}
+
 function startCart(storeId, products, onProgress) {
   if (_cartRunning) return;
   _cartRunning = true;
   const cfg = DRIVE[storeId]; if (!cfg) return;
+  const sel = CART_SEL[storeId] || '.aWCRS310_Add';
 
-  // Ouvrir TOUTES les fenêtres immédiatement (on est dans le handler du clic → autorisé)
-  const wins = products.map((p, i) => {
-    try { return window.open(cfg.url(p.search), '_blank'); }
-    catch(e) { return null; }
-  });
+  ;(async () => {
+    // Ouvrir about:blank — même origine, on peut écrire dedans
+    let w = window.open('about:blank', '_leclerc');
 
-  onProgress(0);
+    for (let i = 0; i < products.length; i++) {
+      if (!_cartRunning) break;
+      onProgress(i);
 
-  // Pour chaque fenêtre, attendre le chargement puis cliquer
-  const sel = '.aWCRS310_Add';
-  const FALLBACK = 'a,button,[role="button"]';
+      const url = cfg.url(products[i].search);
 
-  async function handleWindow(w, idx) {
-    if (!w) return;
-    // Polling readyState
-    for (let t = 0; t < 30; t++) {
-      await new Promise(r => setTimeout(r, 500));
-      try { if (w.document.readyState === 'complete') break; } catch(e) {}
-    }
-    // Délai JS de la page
-    await new Promise(r => setTimeout(r, 1200));
-    // Retry clic jusqu'à 8 fois
-    for (let t = 0; t < 8; t++) {
+      // Écrire dans la fenêtre about:blank un script qui :
+      // 1. Navigue vers l'URL du produit
+      // 2. Clique le bouton dès que la page est chargée
+      // 3. Signale la fin via localStorage
+      const key = '_prx_done_' + i;
+      localStorage.removeItem(key);
+
       try {
-        const btn = w.document.querySelector(sel);
-        if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled') && !btn.disabled) {
-          btn.click();
-          onProgress(idx + 1);
-          // Attendre que le clic soit pris en compte puis fermer
-          await new Promise(r => setTimeout(r, 1500));
-          if (idx > 0) try { w.close(); } catch(e) {}
-          return;
-        }
-        // Fallback
-        const all = [...w.document.querySelectorAll(FALLBACK)];
-        const fb = all.find(b => {
-          const t2 = (b.textContent + (b.getAttribute('aria-label') || '')).toLowerCase().trim();
-          return (t2.includes('ajouter au panier') || t2 === 'acheter') && !b.disabled && !b.classList.contains('inactive');
-        });
-        if (fb) {
-          fb.click();
-          onProgress(idx + 1);
-          await new Promise(r => setTimeout(r, 1500));
-          if (idx > 0) try { w.close(); } catch(e) {}
-          return;
-        }
-      } catch(e) {}
-      await new Promise(r => setTimeout(r, 500));
-    }
-    // Pas trouvé — fermer quand même (sauf 1ère)
-    if (idx > 0) try { w.close(); } catch(e) {}
-    onProgress(idx + 1);
-  }
+        w.document.open();
+        w.document.write('<html><head></head><body><script>' +
+          'var _sel = ' + JSON.stringify(sel) + ';' +
+          'var _key = ' + JSON.stringify(key) + ';' +
+          'var _url = ' + JSON.stringify(url) + ';' +
+          'function tryClick() {' +
+          '  var btn = document.querySelector(_sel);' +
+          '  if (!btn) {' +
+          '    var all = document.querySelectorAll("a,button");' +
+          '    for(var j=0;j<all.length;j++){' +
+          '      var t=(all[j].textContent+(all[j].getAttribute("aria-label")||""||"")).toLowerCase().trim();' +
+          '      if((t==="ajouter au panier"||t==="acheter")&&!all[j].disabled&&!all[j].classList.contains("inactive")){btn=all[j];break;}' +
+          '    }' +
+          '  }' +
+          '  if (btn && !btn.classList.contains("inactive") && !btn.classList.contains("WCTD_disabled") && !btn.disabled) {' +
+          '    btn.click();' +
+          '    try{window.opener&&window.opener.localStorage.setItem(_key,"1");}catch(e){}' +
+          '    return true;' +
+          '  }' +
+          '  return false;' +
+          '}' +
+          'window.onload = function() {' +
+          '  if (!tryClick()) {' +
+          '    var n=0; var iv=setInterval(function(){ if(tryClick()||++n>20){clearInterval(iv);if(n>20)try{window.opener&&window.opener.localStorage.setItem(_key,"timeout");}catch(e){}} }, 400);' +
+          '  }' +
+          '};' +
+          'window.location.href = _url;' +
+          '<\/script></body></html>'
+        );
+        w.document.close();
+      } catch(e) {
+        // Fenêtre bloquée — ouvrir directement
+        try { w.close(); } catch(e2) {}
+        w = window.open(url, '_leclerc');
+      }
 
-  // Lancer tout en parallèle
-  Promise.all(wins.map((w, i) => handleWindow(w, i))).then(() => {
+      // Attendre le signal localStorage (max 12s)
+      const start = Date.now();
+      while (Date.now() - start < 12000) {
+        await new Promise(r => setTimeout(r, 400));
+        const val = localStorage.getItem(key);
+        if (val === '1' || val === 'timeout') break;
+      }
+      localStorage.removeItem(key);
+
+      // Délai entre produits pour ne pas surcharger Leclerc
+      await new Promise(r => setTimeout(r, 800));
+    }
+
     onProgress(products.length);
     _cartRunning = false;
-  });
+    // Fermer la fenêtre à la fin
+    try { w.close(); } catch(e) {}
+  })();
 }
 
 function ProgressBar({ products, cur, storeName, onClose }) {
