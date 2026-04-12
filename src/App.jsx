@@ -97,18 +97,18 @@ function calcStoreTotal(products, storeId, realPrices) {
   let total = 0, realCount = 0
   products.forEach(p => {
     const rp = getRealPrice(p.search, storeId, realPrices)
-    if (rp != null) { total += rp * (p.qty||1); realCount++ }
-    else { const s = STORES.find(x => x.id === storeId); total += (p.price||0)*(p.qty||1)*(s?.factor||1) }
+    if (rp != null) { total += rp; realCount++ }
+    else { const s = STORES.find(x => x.id === storeId); total += (p.price||0)*(s?.factor||1) }
   })
   return { total: +total.toFixed(2), realCount, totalCount: products.length }
 }
 
 function ecoTotal(products, realPrices) {
   return +products.reduce((sum, p) => {
-    let best = (p.price||0)*(p.qty||1) * Math.min(...STORES.map(s => s.factor))
+    let best = (p.price||0) * Math.min(...STORES.map(s => s.factor))
     STORES.forEach(s => {
       const rp = getRealPrice(p.search, s.id, realPrices)
-      if (rp != null) best = Math.min(best, rp * (p.qty||1))
+      if (rp != null) best = Math.min(best, rp)
     })
     return sum + best
   }, 0).toFixed(2)
@@ -206,7 +206,7 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
   const [cpInput, setCpInput] = useState('')
   const [cartProgress, setCartProgress] = useState(null)
   const { products, store: storeName, total, date } = result
-  const base = products.reduce((a, p) => a + (p.price||0)*(p.qty||1), 0)
+  const base = products.reduce((a, p) => a + (p.price||0), 0)
   const ecoAmt = ecoTotal(products, realPrices)
   const hasReal = Object.keys(realPrices).length > 0
   const currentStore = store && store !== 'ecomix' ? STORES.find(x => x.id === store) : null
@@ -290,7 +290,7 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
             return (<div key={i} className="product">
               <div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div>
               <div className={`p-price ${rp != null ? 'real' : ''}`}>
-                {rp != null ? rp.toFixed(2) : ((p.price||0)*(p.qty||1)).toFixed(2)} €
+                {rp != null ? rp.toFixed(2) : (p.price||0).toFixed(2)} €
               </div>
             </div>)
           })}
