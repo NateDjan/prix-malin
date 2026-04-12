@@ -82,61 +82,85 @@ function ecoTotal(products, realPrices) {
 
 let _cartRunning = false
 
-async function waitForPage(w, oldTitle, timeout=9000) {
-  const start = Date.now()
-  while (Date.now()-start < timeout) {
-    try {
-      if (w.document.readyState==='complete') {
-        // Vérifier que la page a bien changé (nouveau titre ou même titre ok)
-        return true
-      }
-    } catch(e) { /* navigation en cours */ }
-    await new Promise(r=>setTimeout(r,300))
-  }
-  return false
-}
-
-async function clickCart(w, storeId) {
-  try {
-    const sel = CART_SEL[storeId]
-    if (sel) {
-      const btn = w.document.querySelector(sel)
-      if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled') && !btn.disabled) {
-        btn.click(); return true
-      }
+// Script auto-clic injecté dans la page Leclerc Drive dès la 1ère ouverture.
+// Il se sauvegarde dans sessionStorage et se réinjecte à chaque page via DOMContentLoaded.
+const BOT_SCRIPT = `
+(function() {
+  var SEL = '.aWCRS310_Add';
+  function tryClick() {
+    var btn = document.querySelector(SEL);
+    if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled')) {
+      btn.click(); return true;
     }
-    const all = [...w.document.querySelectorAll('a,button,[role="button"]')]
-    const btn = all.find(b => {
-      const t = (b.textContent+(b.getAttribute('aria-label')||'')).toLowerCase().trim()
-      return (t.includes('ajouter au panier')||t==='acheter') && !b.disabled && !b.classList.contains('inactive') && !b.classList.contains('WCTD_disabled')
-    })
-    if (btn) { btn.click(); return true }
-    return false
-  } catch(e) { return false }
-}
+    return false;
+  }
+  function activate() {
+    if (!tryClick()) {
+      var n=0, iv=setInterval(function(){ if(tryClick()||++n>20) clearInterval(iv); },400);
+    }
+  }
+  if (sessionStorage.getItem('_prxBot')==='1') {
+    activate();
+  }
+  sessionStorage.setItem('_prxBot','1');
+  activate();
+  document.addEventListener('DOMContentLoaded', activate);
+})();
+`;
 
 function startCart(storeId, products, onProgress) {
-  if (_cartRunning) return
-  _cartRunning = true
-  const cfg = DRIVE[storeId]; if (!cfg) return
-  ;(async () => {
-    const w = window.open(cfg.url(products[0].search), '_leclerc')
-    onProgress(0)
-    // Traiter le 1er produit
-    await waitForPage(w, '', 9000)
-    await new Promise(r=>setTimeout(r,1500))
-    for (let t=0; t<6; t++) { if (await clickCart(w, storeId)) break; await new Promise(r=>setTimeout(r,500)) }
+  if (_cartRunning) return;
+  _cartRunning = true;
+  const cfg = DRIVE[storeId]; if (!cfg) return;
 
-    for (let i=1; i<products.length; i++) {
-      if (!_cartRunning) break
-      onProgress(i)
-      try { w.location.href = cfg.url(products[i].search) } catch(e) { break }
-      await waitForPage(w, '', 9000)
-      await new Promise(r=>setTimeout(r,1500))
-      for (let t=0; t<6; t++) { if (await clickCart(w, storeId)) break; await new Promise(r=>setTimeout(r,500)) }
+  ;(async () => {
+    // Ouvrir le 1er produit — à ce moment on peut encore écrire dans la fenêtre
+    const url0 = cfg.url(products[0].search);
+    const w = window.open('about:blank', '_leclerc');
+    onProgress(0);
+
+    // Injecter le bot AVANT de naviguer — la fenêtre about:blank est same-origin
+    try {
+      w.document.open();
+      w.document.write(`<script>
+        sessionStorage.setItem('_prxBot','1');
+        window.location.href = '${url0.replace(/'/g,"\\'")}';
+      <\/script>`);
+      w.document.close();
+    } catch(e) {
+      // Fallback: ouvrir directement
+      w.location.href = url0;
     }
-    onProgress(products.length); _cartRunning = false
-  })()
+
+    // Attendre que la 1ère page charge
+    await new Promise(r => setTimeout(r, 5000));
+
+    // Injecter le script bot dans la page chargée
+    try {
+      const s = w.document.createElement('script');
+      s.textContent = BOT_SCRIPT;
+      w.document.head.appendChild(s);
+    } catch(e) {}
+
+    // Boucle sur les produits suivants
+    for (let i = 1; i < products.length; i++) {
+      if (!_cartRunning) break;
+      onProgress(i);
+      try { w.location.href = cfg.url(products[i].search); } catch(e) { break; }
+      // Attendre le chargement + le clic auto du bot
+      await new Promise(r => setTimeout(r, 5000));
+      // Fallback : si le bot n'a pas cliqué, on essaie nous-mêmes
+      try {
+        const btn = w.document.querySelector('.aWCRS310_Add');
+        if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled')) {
+          btn.click();
+        }
+      } catch(e) {}
+    }
+
+    onProgress(products.length);
+    _cartRunning = false;
+  })();
 }
 
 function ProgressBar({ products, cur, storeName, onClose }) {
