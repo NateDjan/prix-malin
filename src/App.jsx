@@ -166,7 +166,15 @@ function ImportView({ onAnalyze, loading, error }) {
 
   const handleFile = useCallback(async file => {
     const ext = file.name.split('.').pop().toLowerCase()
-    if (['jpg','jpeg','png','webp'].includes(ext)) {
+    if (ext === 'pdf') {
+      // PDF -> extraire le texte via FileReader en base64 puis envoyer a Groq vision
+      const reader = new FileReader()
+      reader.onload = e => {
+        const b64 = e.target.result.split(',')[1]
+        onAnalyze(null, b64, 'application/pdf')
+      }
+      reader.readAsDataURL(file)
+    } else if (['jpg','jpeg','png','webp'].includes(ext)) {
       const reader = new FileReader()
       reader.onload = e => onAnalyze(null, e.target.result.split(',')[1], file.type)
       reader.readAsDataURL(file)
@@ -186,8 +194,8 @@ function ImportView({ onAnalyze, loading, error }) {
     >
       <div style={{ fontSize:36, marginBottom:10 }}>🧾</div>
       <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>Importer un ticket</div>
-      <div style={{ fontSize:12, color:'rgba(240,237,232,.4)' }}>JPG · PNG · TXT — glisse ou clique</div>
-      <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp,.txt,.csv" style={{ display:'none' }}
+      <div style={{ fontSize:12, color:'rgba(240,237,232,.4)' }}>PDF · JPG · PNG · TXT — glisse ou clique</div>
+      <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv" style={{ display:'none' }}
         onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
     </div>
     <div className="sep">— ou colle le texte —</div>
@@ -335,7 +343,7 @@ export default function App() {
       } else if (text) {
         res = await analyzeText(text)
       } else {
-        throw new Error('Format non supporte')
+        throw new Error('Format non supporte. Utilise JPG, PNG, TXT ou PDF avec texte selectionnable.')
       }
       if (!res.products?.length) throw new Error('Aucun produit trouve dans le ticket')
       setResults(prev => ({ ...prev, [catId]: res }))
