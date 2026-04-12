@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
+import { startCart, stopCart } from './cart.js'
 
 const STORES = [
   { id: 'leclerc',     name: 'E.Leclerc',   letter: 'E', color: '#0052CC', factor: 1.00 },
@@ -8,15 +9,6 @@ const STORES = [
   { id: 'auchan',      name: 'Auchan',       letter: 'A', color: '#E31E24', factor: 1.06 },
   { id: 'monoprix',    name: 'Monoprix',     letter: 'M', color: '#E63946', factor: 1.22 },
 ]
-
-const DRIVE = {
-  leclerc:     { note: 'Connecte-toi sur Leclerc Drive avant de démarrer', url: q => `https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche=${encodeURIComponent(q)}` },
-  carrefour:   { note: 'Connecte-toi sur carrefour.fr avant de démarrer',   url: q => `https://www.carrefour.fr/s?q=${encodeURIComponent(q)}&ref=search` },
-  intermarche: { note: 'Connecte-toi sur intermarche.com avant de démarrer', url: q => `https://www.intermarche.com/recherche?q=${encodeURIComponent(q)}` },
-  auchan:      { note: 'Connecte-toi sur auchan.fr avant de démarrer',      url: q => `https://www.auchan.fr/recherche?q=${encodeURIComponent(q)}` },
-  monoprix:    { note: 'Connecte-toi sur monoprix.fr avant de démarrer',    url: q => `https://www.monoprix.fr/recherche/${encodeURIComponent(q)}` },
-  lidl:        { note: 'Disponible sur lidl.fr',                            url: q => `https://www.lidl.fr/recherche?q=${encodeURIComponent(q)}` },
-}
 
 const CART_SEL = {
   leclerc:     '.aWCRS310_Add',
@@ -80,99 +72,14 @@ function ecoTotal(products, realPrices) {
   return +products.reduce((sum,p)=>{ let best=(p.price||0)*Math.min(...STORES.map(s=>s.factor)); STORES.forEach(s=>{const rp=getRealPrice(p.search,s.id,realPrices);if(rp!=null)best=Math.min(best,rp)}); return sum+best }, 0).toFixed(2)
 }
 
-let _cartRunning = false
-
-const CART_SEL = {
-  leclerc:     '.aWCRS310_Add',
-  carrefour:   'button[aria-label*="Ajouter le produit"]',
-  intermarche: '.add-to-cart-button',
-  auchan:      '.add-to-cart',
-  monoprix:    '.btn-addtocart',
-  lidl:        '.m-button--primary',
-}
-
-function buildBotPage(url, sel) {
-  const s = [
-    'var url=' + JSON.stringify(url) + ';',
-    'var sel=' + JSON.stringify(sel) + ';',
-    'function click(){',
-    '  var b=document.querySelector(sel);',
-    '  if(!b){var all=document.querySelectorAll("a,button");',
-    '    for(var j=0;j<all.length;j++){',
-    '      var t=(all[j].textContent+(all[j].getAttribute("aria-label")||"")).toLowerCase().trim();',
-    '      if((t.includes("ajouter au panier")||t==="acheter")&&!all[j].disabled&&!all[j].classList.contains("inactive")){b=all[j];break;}',
-    '    }',
-    '  }',
-    '  if(b&&!b.classList.contains("inactive")&&!b.classList.contains("WCTD_disabled")&&!b.disabled){',
-    '    b.click();',
-    '    try{window.opener&&window.opener.postMessage("cart_done","*");}catch(e){}',
-    '    return true;',
-    '  } return false;',
-    '}',
-    'window.onload=function(){',
-    '  if(!click()){var n=0;var iv=setInterval(function(){if(click()||++n>20){clearInterval(iv);if(n>20)try{window.opener&&window.opener.postMessage("cart_timeout","*");}catch(e){}}},400);}',
-    '};',
-    'window.location.href=url;',
-  ].join('');
-  return '<html><head></head><body><scr' + 'ipt>' + s + '</scri' + 'pt></body></html>';
-}
-
-function startCart(storeId, products, onProgress) {
-  if (_cartRunning) return
-  _cartRunning = true
-  const cfg = DRIVE[storeId]; if (!cfg) return
-  const sel = CART_SEL[storeId] || '.aWCRS310_Add'
-
-  ;(async () => {
-    let w = null
-    let _resolve = null
-
-    // Écouter les messages de la fenêtre bot
-    const handler = (e) => {
-      if ((e.data === 'cart_done' || e.data === 'cart_timeout') && _resolve) {
-        _resolve(e.data)
-      }
-    }
-    window.addEventListener('message', handler)
-
-    for (let i = 0; i < products.length; i++) {
-      if (!_cartRunning) break
-      onProgress(i)
-
-      const url = cfg.url(products[i].search)
-      const html = buildBotPage(url, sel)
-
-      // Ouvrir about:blank et écrire le bot dedans
-      if (!w || w.closed) {
-        w = window.open('about:blank', '_leclerc')
-      }
-
-      try {
-        w.document.open()
-        w.document.write(html)
-        w.document.close()
-      } catch(e) {
-        // Si about:blank n'est plus accessible, rouvrir
-        try { w.close() } catch(e2) {}
-        w = window.open('about:blank', '_leclerc')
-        try { w.document.open(); w.document.write(html); w.document.close() } catch(e3) {}
-      }
-
-      // Attendre le message postMessage (max 15s)
-      await new Promise(r => {
-        _resolve = r
-        setTimeout(() => r('timeout'), 15000)
-      })
-      _resolve = null
-
-      await new Promise(r => setTimeout(r, 500))
-    }
-
-    window.removeEventListener('message', handler)
-    onProgress(products.length)
-    _cartRunning = false
-    try { w && w.close() } catch(e) {}
-  })()
+// Cart logic is in src/cart.js
+const DRIVE = {
+  leclerc:     { note: 'Connecte-toi sur Leclerc Drive avant de démarrer', url: q => `https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche=${encodeURIComponent(q)}` },
+  carrefour:   { note: 'Connecte-toi sur carrefour.fr avant de démarrer',   url: q => `https://www.carrefour.fr/s?q=${encodeURIComponent(q)}&ref=search` },
+  intermarche: { note: 'Connecte-toi sur intermarche.com avant de démarrer', url: q => `https://www.intermarche.com/recherche?q=${encodeURIComponent(q)}` },
+  auchan:      { note: 'Connecte-toi sur auchan.fr avant de démarrer',      url: q => `https://www.auchan.fr/recherche?q=${encodeURIComponent(q)}` },
+  monoprix:    { note: 'Connecte-toi sur monoprix.fr avant de démarrer',    url: q => `https://www.monoprix.fr/recherche/${encodeURIComponent(q)}` },
+  lidl:        { note: 'Disponible sur lidl.fr',                            url: q => `https://www.lidl.fr/recherche?q=${encodeURIComponent(q)}` },
 }
 
 function ProgressBar({ products, cur, storeName, onClose }) {
@@ -273,7 +180,7 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
       <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,bestS.id,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
     </div>) })()}
     {!cp&&(<div className="cp-box"><div className="cp-label">📍 Code postal pour les vrais prix</div><div className="cp-row"><input className="cp-input" type="text" placeholder="Ex: 92410" maxLength={5} value={cpInput} onChange={e=>setCpInput(e.target.value)}/><button className="cp-btn" onClick={()=>{if(cpInput.length>=4){onSetCp(cpInput);onFetchPrices(products,cpInput)}}}>OK</button></div></div>)}
-    {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar products={products} cur={cartProgress} storeName={s?.name||''} onClose={()=>{_cartRunning=false;setCartProgress(null)}}/> })()}
+    {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar products={products} cur={cartProgress} storeName={s?.name||''} onClose={()=>{stopCart();setCartProgress(null)}}/> })()}
   </>)
 }
 
