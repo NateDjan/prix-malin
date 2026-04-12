@@ -167,13 +167,28 @@ function ImportView({ onAnalyze, loading, error }) {
   const handleFile = useCallback(async file => {
     const ext = file.name.split('.').pop().toLowerCase()
     if (ext === 'pdf') {
-      // PDF -> extraire le texte via FileReader en base64 puis envoyer a Groq vision
-      const reader = new FileReader()
-      reader.onload = e => {
-        const b64 = e.target.result.split(',')[1]
-        onAnalyze(null, b64, 'application/pdf')
+      // PDF -> convertir en image avec PDF.js puis analyser
+      try {
+        const arrayBuf = await file.arrayBuffer()
+        const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs')
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs'
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise
+        // Rendre la premiere page
+        const page = await pdf.getPage(1)
+        const viewport = page.getViewport({ scale: 2.0 })
+        const canvas = document.createElement('canvas')
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        const ctx = canvas.getContext('2d')
+        await page.render({ canvasContext: ctx, viewport }).promise
+        const b64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1]
+        onAnalyze(null, b64, 'image/jpeg')
+      } catch(e) {
+        // Fallback: envoyer le PDF directement
+        const reader = new FileReader()
+        reader.onload = ev => onAnalyze(null, ev.target.result.split(',')[1], 'image/jpeg')
+        reader.readAsDataURL(file)
       }
-      reader.readAsDataURL(file)
     } else if (['jpg','jpeg','png','webp'].includes(ext)) {
       const reader = new FileReader()
       reader.onload = e => onAnalyze(null, e.target.result.split(',')[1], file.type)
