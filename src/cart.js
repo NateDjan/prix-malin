@@ -1,90 +1,115 @@
+
 export const CART_SEL = {
-  leclerc:     '.aWCRS310_Add',
-  carrefour:   'button[aria-label*="Ajouter le produit"]',
+  leclerc: '.aWCRS310_Add',
+  carrefour: 'button[aria-label*="Ajouter le produit"]',
   intermarche: '.add-to-cart-button',
-  auchan:      '.add-to-cart',
-  monoprix:    '.btn-addtocart',
-  lidl:        '.m-button--primary',
+  auchan: '.add-to-cart',
+  monoprix: '.btn-addtocart',
+  lidl: '.m-button--primary',
 }
 
 let _running = false
 export function stopCart() { _running = false }
 
+// Vérifie si la page Leclerc est une page de résultats valide
+// (pas une redirection vers l'accueil ou le login)
+function isValidLeclercPage(win) {
+  try {
+    const url = win.location.href
+    // URL de résultats = contient TexteRecherche
+    return url.includes('TexteRecherche') || url.includes('recherche')
+  } catch(e) { return false }
+}
+
 export function startCart(storeId, products, driveConfig, onProgress) {
   if (_running) return
   _running = true
   const cfg = driveConfig[storeId]
-  if (!cfg) { _running = false; return }
+  if (!cfg) return
   const sel = CART_SEL[storeId] || '.aWCRS310_Add'
 
-  // window.open SYNCHRONE — on est dans le handler du clic, avant tout await
-  const url0 = cfg.url(products[0].search)
-  const w = window.open(url0, '_cart_pm')
+  // Ouvrir le premier onglet synchronement (dans le handler du clic)
+  const w = window.open(cfg.url(products[0].search), '_cart_lec')
+  if (!w) { _running = false; return }
 
-  if (!w) {
-    // Popup bloqué — écrire dans localStorage pour le bot bookmarklet
-    const queue = products.map(p => ({ search: p.search, url: cfg.url(p.search) }))
-    localStorage.setItem('pm_cart', JSON.stringify({
-      storeId, sel, queue, total: queue.length, current: 0, done: 0, ts: Date.now()
-    }))
-    onProgress(0)
-    ;(async () => {
-      while (_running) {
-        await new Promise(r => setTimeout(r, 600))
-        try {
-          const data = JSON.parse(localStorage.getItem('pm_cart') || '{}')
-          if (!data.queue) break
-          onProgress(data.done || 0)
-          if ((data.done || 0) >= data.total) break
-        } catch(e) { break }
-      }
-      onProgress(products.length)
-      _running = false
-      localStorage.removeItem('pm_cart')
-    })()
-    return
-  }
-
-  // Popup ouvert — injecter le bot via new Function, postMessage pour sync
   onProgress(0)
+
   let _resolve = null
   const msgHandler = (e) => {
-    if ((e.data === 'cart_done' || e.data === 'cart_timeout') && _resolve) _resolve(e.data)
+    if ((e.data === 'cart_done' || e.data === 'cart_timeout') && _resolve) {
+      _resolve(e.data)
+    }
   }
   window.addEventListener('message', msgHandler)
 
   ;(async () => {
-    async function injectBot(win, url) {
-      await new Promise(r => setTimeout(r, 300))
-      try {
-        const code =
-          'var _s=' + JSON.stringify(sel) + ';' +
-          'var _u=' + JSON.stringify(url) + ';' +
-          'function _c(){' +
-          '  var b=document.querySelector(_s);' +
-          '  if(!b){var all=document.querySelectorAll("a,button");for(var k=0;k<all.length;k++){var t=(all[k].textContent+(all[k].getAttribute("aria-label")||"")).toLowerCase().trim();if((t.includes("ajouter au panier")||t==="acheter")&&!all[k].disabled&&!all[k].classList.contains("inactive")){b=all[k];break;}}}' +
-          '  if(b&&!b.classList.contains("inactive")&&!b.classList.contains("WCTD_disabled")&&!b.disabled){b.click();try{window.opener.postMessage("cart_done","*");}catch(e){}return true;}return false;' +
-          '}' +
-          'window.onload=function(){if(!_c()){var n=0,iv=setInterval(function(){if(_c()||++n>25){clearInterval(iv);if(n>25)try{window.opener.postMessage("cart_timeout","*");}catch(e){}},400);}};' +
-          'window.location.href=_u;'
-        new win.Function(code)()
-        return true
-      } catch(e) { return false }
-    }
-
-    await injectBot(w, url0)
-    await new Promise(r => { _resolve = r; setTimeout(() => r('timeout'), 15000) })
-    _resolve = null
-    onProgress(1)
-
-    for (let i = 1; i < products.length; i++) {
+    for (let i = 0; i < products.length; i++) {
       if (!_running) break
       onProgress(i)
-      try { w.location.href = cfg.url(products[i].search) } catch(e) { break }
-      await new Promise(r => { _resolve = r; setTimeout(() => r('timeout'), 15000) })
-      _resolve = null
+
+      const url = cfg.url(products[i].search)
+
+      // Naviguer dans la fenêtre
+      if (i === 0) {
+        // Déjà ouvert via window.open
+      } else {
+        try { w.location.href = url } catch(e) { break }
+      }
+
+      // Attendre que la page charge ET que c'est bien une page résultats
+      // (pas une redirection login)
+      let loaded = false
+      for (let t = 0; t < 30; t++) {
+        await new Promise(r => setTimeout(r, 500))
+        try {
+          if (w.closed) { _running = false; break }
+          const wUrl = w.location.href
+          const ready = w.document.readyState === 'complete'
+          // C'est une page résultat valide si elle contient TexteRecherche
+          if (ready && wUrl.includes('TexteRecherche')) {
+            loaded = true
+            break
+          }
+          // Redirection vers accueil/login détectée
+          if (ready && !wUrl.includes('TexteRecherche') && t > 2) {
+            // Pas connecté — réessayer en naviguant directement vers l'URL
+            w.location.href = url
+          }
+        } catch(e) {}
+      }
+
+      if (!loaded || !_running) break
+
+      // Attendre un peu que le JS de Leclerc finisse
+      await new Promise(r => setTimeout(r, 1500))
+
+      // Cliquer le bouton dans la fenêtre popup
+      let clicked = false
+      for (let t = 0; t < 15; t++) {
+        try {
+          const btn = w.document.querySelector(sel)
+          if (btn && !btn.classList.contains('inactive') && !btn.classList.contains('WCTD_disabled') && !btn.disabled) {
+            const panierBefore = w.document.querySelector('.aWCRS381_Montant')?.textContent
+            btn.click()
+            // Vérifier que le clic a bien fonctionné (pas de redirection)
+            await new Promise(r => setTimeout(r, 800))
+            try {
+              const newUrl = w.location.href
+              if (!newUrl.includes('TexteRecherche')) {
+                // Redirection = pas connecté, on arrête
+                console.log('[Cart] Redirection détectée après clic — pas connecté ?')
+                break
+              }
+            } catch(e) {}
+            clicked = true
+            break
+          }
+        } catch(e) {}
+        await new Promise(r => setTimeout(r, 400))
+      }
+
       onProgress(i + 1)
-      await new Promise(r => setTimeout(r, 400))
+      await new Promise(r => setTimeout(r, 500))
     }
 
     window.removeEventListener('message', msgHandler)
