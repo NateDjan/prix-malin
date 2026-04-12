@@ -167,14 +167,14 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
     </div>
     {store&&store!=='ecomix'&&currentStore&&(<div>
       <div className="notice"><div className="notice-title">🔐 Avant de démarrer</div><div className="notice-sub">{DRIVE[store]?.note}</div></div>
-      <button className="btn-cart" style={{background:currentStore.color}} onClick={()=>{setCartProgress(0);startCart(store,products,cur=>setCartProgress(cur))}}>
+      <button className="btn-cart" style={{background:currentStore.color}} onClick={()=>{setCartProgress(0);startCart(store,products,DRIVE,cur=>setCartProgress(cur))}}>
         🛒 Remplir panier {currentStore.name} ({products.length} produits)
       </button>
       <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,store,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
     </div>)}
     {store==='ecomix'&&(()=>{ const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b); return (<div>
       <div className="notice"><div className="notice-title">🌿 Eco-Mix</div><div className="notice-sub">Chaque produit dans l&apos;enseigne la moins chère.</div></div>
-      <button className="btn-cart" style={{background:'linear-gradient(135deg,#5BF5A8,#00C97A)',color:'#0A0A0F'}} onClick={()=>{setCartProgress(0);startCart(bestS.id,products,cur=>setCartProgress(cur))}}>
+      <button className="btn-cart" style={{background:'linear-gradient(135deg,#5BF5A8,#00C97A)',color:'#0A0A0F'}} onClick={()=>{setCartProgress(0);startCart(bestS.id,products,DRIVE,cur=>setCartProgress(cur))}}>
         🛒 Remplir panier Eco-Mix ({products.length} produits)
       </button>
       <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,bestS.id,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
