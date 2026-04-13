@@ -179,65 +179,19 @@ function est(prods,sid){const s=STORES.find(x=>x.id===sid);if(!s)return 0;return
 function emAmt(prods){return +(prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0)*Math.min(...STORES.map(s=>s.factor))).toFixed(2);}
 function emSave(prods){const base=prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0);return +(base*(STORES.reduce((a,s)=>a+s.factor,0)/STORES.length-Math.min(...STORES.map(s=>s.factor)))).toFixed(2);}
 
-/* ═══ Panier pas-a-pas V3 : liens cliquables, zero window.open ═══ */
-function _cartGet(){try{return JSON.parse(localStorage.getItem('_pmc')||'null');}catch(e){return null;}}
-function _cartSet(o){localStorage.setItem('_pmc',JSON.stringify(o));}
-function _cartDel(){localStorage.removeItem('_pmc');}
-
-function startCart(sid,prods){
-  if(!DRIVE[sid]){alert('Enseigne non configuree pour le drive');return;}
-  _cartSet({sid:sid,prods:prods,idx:0});
-  showCartStep();
-}
-
-function cartNext(){
-  const c=_cartGet();if(!c)return;
-  c.idx++;
-  if(c.idx>=c.prods.length){
-    _cartDel();
-    const el=document.getElementById('_cpanel');
-    if(el)el.innerHTML='<div style="text-align:center;padding:30px 16px"><div style="font-size:36px;margin-bottom:12px">🎉</div><div style="font-size:16px;font-weight:800;color:#5BF5A8;margin-bottom:6px">Panier termine !</div><div style="font-size:13px;color:rgba(240,237,232,.5);margin-bottom:16px">'+c.prods.length+' produits recherches sur '+DRIVE[c.sid].name+'</div><button onclick="document.getElementById(\'_cpanel\').remove()" style="background:#5BF5A8;color:#0A0A0F;border:none;border-radius:12px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit">Fermer</button></div>';
-    return;
-  }
-  _cartSet(c);
-  showCartStep();
-}
-
-function cartCancel(){
-  _cartDel();
-  const el=document.getElementById('_cpanel');if(el)el.remove();
-}
-
-function showCartStep(){
-  const c=_cartGet();if(!c||!c.prods||c.idx>=c.prods.length)return;
-  const p=c.prods[c.idx];
-  const cfg=DRIVE[c.sid];if(!cfg)return;
-  const cur=c.idx+1, tot=c.prods.length;
-  const pct=Math.round(cur/tot*100);
-  const url=cfg.url(p.search);
-  let el=document.getElementById('_cpanel');
-  if(!el){el=document.createElement('div');el.id='_cpanel';el.style.cssText='position:fixed;inset:0;background:rgba(10,10,15,.97);z-index:9999;display:flex;flex-direction:column;overflow-y:auto';document.body.appendChild(el);}
-  el.innerHTML=
-    '<div style="max-width:520px;width:100%;margin:0 auto;padding:20px 16px;flex:1;display:flex;flex-direction:column">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
-        '<span style="color:#5BF5A8;font-weight:900;font-size:15px">🛒 Produit '+cur+'/'+tot+'</span>'+
-        '<button onclick="cartCancel()" style="background:none;border:1px solid rgba(255,80,80,.3);color:#ff9090;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:12px;font-family:inherit">✕ Arreter</button>'+
-      '</div>'+
-      '<div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;margin-bottom:20px"><div style="background:#5BF5A8;height:6px;border-radius:4px;width:'+pct+'%;transition:width .3s"></div></div>'+
-      '<div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:20px;margin-bottom:20px">'+
-        '<div style="font-size:11px;color:rgba(240,237,232,.4);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Produit a ajouter</div>'+
-        '<div style="font-size:17px;font-weight:800;color:#F0EDE8;margin-bottom:4px">'+p.search+'</div>'+
-        '<div style="font-size:12px;color:rgba(240,237,232,.4)">Ticket : '+p.original+'</div>'+
-      '</div>'+
-      '<div style="font-size:13px;color:rgba(240,237,232,.5);margin-bottom:12px;text-align:center">Etape 1 : Ouvre le lien, ajoute au panier sur le site</div>'+
-      '<a href="'+url+'" target="_blank" rel="noopener" style="display:block;text-align:center;padding:16px;border-radius:14px;background:'+(STORES.find(x=>x.id===c.sid)?.color||'#0052CC')+';color:#fff;font-weight:800;font-size:15px;text-decoration:none;margin-bottom:16px;border:1px solid rgba(91,245,168,.3)">🔗 Ouvrir sur '+cfg.name+' ↗</a>'+
-      '<div style="font-size:13px;color:rgba(240,237,232,.5);margin-bottom:12px;text-align:center">Etape 2 : Une fois ajoute, reviens ici et clique :</div>'+
-      '<button onclick="cartNext()" style="width:100%;padding:16px;border-radius:14px;border:none;background:#5BF5A8;color:#0A0A0F;font-weight:900;font-size:16px;cursor:pointer;font-family:inherit;margin-bottom:10px">'+(cur<tot?'✅ C\'est fait ! Produit suivant →':'✅ Terminer le panier')+'</button>'+
-      '<div style="text-align:center;font-size:11px;color:rgba(240,237,232,.25);margin-top:8px">'+cfg.name+' · '+cur+' sur '+tot+' produits</div>'+
-    '</div>';
-}
-// Au chargement : restaurer le panier si actif
-(function(){const c=_cartGet();if(c&&c.prods&&c.idx<c.prods.length)setTimeout(showCartStep,200);})()
+/* ═══ Panier V4 : liens inline sur chaque produit ═══ */
+const CART_URLS={
+  leclerc:'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/mon-panier.aspx',
+  carrefour:'https://www.carrefour.fr/mon-panier',
+  intermarche:'https://www.intermarche.com/panier',
+  auchan:'https://www.auchan.fr/panier',
+  monoprix:'https://www.monoprix.fr/panier',
+  lidl:'https://www.lidl.fr/'
+};
+function _opened(){try{return JSON.parse(localStorage.getItem('_pmo')||'{}');}catch(e){return {};}}
+function markOpened(sid,idx){const o=_opened();o[sid+'_'+idx]=1;localStorage.setItem('_pmo',JSON.stringify(o));}
+function isOpened(sid,idx){return !!_opened()[sid+'_'+idx];}
+function resetOpened(){localStorage.removeItem('_pmo');render();}
 
 function render(){
   const {catId,sec,status,msg,results,store}=S;
@@ -287,24 +241,36 @@ function render(){
     h+='</div>';
     if(store==='ecomix'){
       const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b);
-      h+='<div class="login-notice"><div class="login-title">🌿 Eco-Mix</div><div class="login-sub">Chaque produit achet\u00e9 dans l\'enseigne la moins ch\u00e8re.<br><br><strong style="color:#F0EDE8">Comment \u00e7a marche :</strong> Chaque produit s\'ouvre un par un. Tu ajoutes au panier sur le site, puis tu cliques Suivant.</div></div>';
-      h+='<button class="btn-cart" style="background:linear-gradient(135deg,#5BF5A8,#00C97A);color:#0A0A0F" onclick="startCart(\''+bestS.id+'\','+JSON.stringify(prods)+')">🛒 D\u00e9marrer le panier Eco-Mix pas-\u00e0-pas ('+prods.length+' produits)</button>';
+      const cfg=DRIVE[bestS.id];
+      const openCount=prods.filter((_,i)=>isOpened(bestS.id,i)).length;
+      h+='<div class="login-notice"><div class="login-title">🌿 Eco-Mix · '+bestS.name+'</div><div class="login-sub">Clique sur <strong style="color:#5BF5A8">Ouvrir</strong> pour chaque produit, ajoute-le au panier sur le site, puis passe au suivant.</div></div>';
+      if(openCount>0)h+='<div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1;background:rgba(91,245,168,.1);border-radius:10px;padding:10px 14px;text-align:center"><span style="color:#5BF5A8;font-weight:800;font-size:14px">'+openCount+'/'+prods.length+'</span><div style="font-size:11px;color:rgba(240,237,232,.4)">ouverts</div></div><a href="'+(CART_URLS[bestS.id]||'#')+'" target="_blank" rel="noopener" style="flex:1;background:#5BF5A8;border-radius:10px;padding:10px 14px;text-align:center;text-decoration:none;color:#0A0A0F;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center">🛒 Voir mon panier ↗</a></div>';
+      if(openCount>0)h+='<button onclick="resetOpened()" style="background:none;border:none;color:rgba(240,237,232,.3);font-size:11px;cursor:pointer;margin-bottom:8px;font-family:inherit">Reinitialiser les coches</button>';
       h+='<div class="products">';
-      prods.forEach(p=>{
+      prods.forEach((p,i)=>{
+        const done=isOpened(bestS.id,i);
+        const url=cfg?cfg.url(p.search):'#';
         const rp=getRealPrice(p.search,bestS.id);
-        const pd=rp!=null?'<span style="color:#5BF5A8">'+rp.toFixed(2)+' €</span>':((p.price||0)*(p.qty||1)).toFixed(2)+' €';
-        h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+pd+'</div></div>';
+        const pd=rp!=null?'<span style="color:#5BF5A8">'+rp.toFixed(2)+' \u20ac</span>':((p.price||0)*(p.qty||1)).toFixed(2)+' \u20ac';
+        h+='<div class="product" style="'+(done?'opacity:.5;':'')+'"><div style="flex:1;min-width:0"><div class="p-name">'+(done?'\u2705 ':'')+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div style="display:flex;align-items:center;gap:8px"><div class="p-price">'+pd+'</div><a href="'+url+'" target="_blank" rel="noopener" onclick="markOpened(\''+bestS.id+'\','+i+');setTimeout(render,300)" style="background:'+(done?'rgba(91,245,168,.15)':bestS.color)+';color:'+(done?'#5BF5A8':'#fff')+';padding:6px 10px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap">'+(done?'\u2705':'🔗 Ouvrir')+'</a></div></div>';
       });
       h+='</div>';
     } else if(store){
       const s=STORES.find(x=>x.id===store);
       const cfg=DRIVE[store];
-      if(cfg)h+='<div class="login-notice"><div class="login-title">🔐 Avant de d\u00e9marrer</div><div class="login-sub">'+cfg.note+'<br><br><strong style="color:#F0EDE8">Fonctionnement :</strong> Chaque produit s\'ouvre un par un. Ajoute-le au panier sur le site, puis clique <strong style="color:#5BF5A8">Suivant</strong>.</div></div><button class="btn-cart" style="background:'+s.color+'" onclick="startCart(\''+store+'\','+JSON.stringify(prods)+')">🛒 D\u00e9marrer le panier pas-\u00e0-pas ('+prods.length+' produits)</button>';
+      const openCount=prods.filter((_,i)=>isOpened(store,i)).length;
+      if(cfg){
+        h+='<div class="login-notice"><div class="login-title">🔐 '+cfg.name+'</div><div class="login-sub">'+cfg.note+'<br>Clique <strong style="color:#5BF5A8">Ouvrir</strong> sur chaque produit, ajoute-le au panier, puis passe au suivant.</div></div>';
+        if(openCount>0)h+='<div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1;background:rgba(91,245,168,.1);border-radius:10px;padding:10px 14px;text-align:center"><span style="color:#5BF5A8;font-weight:800;font-size:14px">'+openCount+'/'+prods.length+'</span><div style="font-size:11px;color:rgba(240,237,232,.4)">ouverts</div></div><a href="'+(CART_URLS[store]||'#')+'" target="_blank" rel="noopener" style="flex:1;background:'+s.color+';border-radius:10px;padding:10px 14px;text-align:center;text-decoration:none;color:#fff;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center">🛒 Voir mon panier ↗</a></div>';
+        if(openCount>0)h+='<button onclick="resetOpened()" style="background:none;border:none;color:rgba(240,237,232,.3);font-size:11px;cursor:pointer;margin-bottom:8px;font-family:inherit">Reinitialiser les coches</button>';
+      }
       h+='<div class="products">';
-      prods.forEach(p=>{
+      prods.forEach((p,i)=>{
+        const done=isOpened(store,i);
+        const url=cfg?cfg.url(p.search):'#';
         const rp=getRealPrice(p.search,store);
-        const pd=rp!=null?'<span style="color:#5BF5A8">'+rp.toFixed(2)+' €</span>':((p.price||0)*(p.qty||1)).toFixed(2)+' €';
-        h+='<div class="product"><div><div class="p-name">'+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div class="p-price">'+pd+'</div></div>';
+        const pd=rp!=null?'<span style="color:#5BF5A8">'+rp.toFixed(2)+' \u20ac</span>':((p.price||0)*(p.qty||1)).toFixed(2)+' \u20ac';
+        h+='<div class="product" style="'+(done?'opacity:.5;':'')+'"><div style="flex:1;min-width:0"><div class="p-name">'+(done?'\u2705 ':'')+p.search+'</div><div class="p-orig">'+p.original+'</div></div><div style="display:flex;align-items:center;gap:8px"><div class="p-price">'+pd+'</div>'+(cfg?'<a href="'+url+'" target="_blank" rel="noopener" onclick="markOpened(\''+store+'\','+i+');setTimeout(render,300)" style="background:'+(done?'rgba(91,245,168,.15)':s.color)+';color:'+(done?'#5BF5A8':'#fff')+';padding:6px 10px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap">'+(done?'\u2705':'🔗 Ouvrir')+'</a>':'')+'</div></div>';
       });
       h+='</div>';
     }
