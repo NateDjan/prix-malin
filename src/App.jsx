@@ -26,9 +26,19 @@ async function callProxy(messages) {
   const r = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: SYS, messages }) })
   const d = await r.json()
   if (!r.ok || d.error) throw new Error(d.error || 'Erreur API')
-  const m = (d.text || '').match(/\{[\s\S]*\}/)
-  if (!m) throw new Error('Réponse invalide')
-  return JSON.parse(m[0])
+  let text = d.text || ''
+  // Supprimer tout ce qui précède le 1er { et suit le dernier }
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start === -1 || end === -1) throw new Error('Réponse invalide du modèle')
+  text = text.slice(start, end + 1)
+  try { return JSON.parse(text) }
+  catch(e) {
+    // Tentative de réparation : supprimer les caractères de contrôle
+    text = text.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/,\s*([}\]])/g, '$1')
+    try { return JSON.parse(text) }
+    catch(e2) { throw new Error('JSON invalide : ' + e2.message.slice(0,60)) }
+  }
 }
 
 async function analyzeText(text) {

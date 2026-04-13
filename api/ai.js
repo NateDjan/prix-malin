@@ -38,7 +38,11 @@ export default async function handler(req) {
     text = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
     
     // Supprimer les blocs markdown
-    text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    text = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+    
+    // Supprimer tout texte avant le 1er { et après le dernier }
+    const s = text.indexOf('{'), e = text.lastIndexOf('}');
+    if (s !== -1 && e !== -1) text = text.slice(s, e + 1);
 
     return new Response(JSON.stringify({ text }), { headers: cors });
   } catch(err) {
