@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prix Malin — Bot Panier</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0A0A0F;color:#F0EDE8;font-family:system-ui,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:32px;max-width:480px;width:100%;text-align:center}
+h1{font-size:22px;font-weight:900;margin-bottom:8px}
+.sub{color:rgba(240,237,232,.5);font-size:14px;margin-bottom:28px;line-height:1.6}
+.step{background:rgba(91,245,168,.08);border:1px solid rgba(91,245,168,.2);border-radius:12px;padding:16px;margin-bottom:12px;text-align:left}
+.step-num{color:#5BF5A8;font-weight:800;font-size:13px;margin-bottom:6px}
+.step-desc{font-size:13px;color:rgba(240,237,232,.7);line-height:1.5}
+.bookmarklet{display:inline-block;background:#5BF5A8;color:#0A0A0F;font-weight:800;font-size:15px;padding:14px 28px;border-radius:14px;text-decoration:none;margin:20px 0;cursor:pointer}
+.bookmarklet:hover{background:#3de896}
+.note{font-size:12px;color:rgba(240,237,232,.35);margin-top:16px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🤖 Bot Panier Leclerc</h1>
+  <div class="sub">Ajoute automatiquement chaque produit au panier<br>sur E.Leclerc Drive</div>
+  
+  <div class="step">
+    <div class="step-num">ÉTAPE 1</div>
+    <div class="step-desc">Fais glisser le bouton ci-dessous dans ta barre de favoris (une seule fois)</div>
+  </div>
+  
+  <a class="bookmarklet" href="javascript:(function(){var s=document.createElement('script');s.src='https://prix-malin.vercel.app/bot.js?t='+Date.now();document.head.appendChild(s);})();" 
+     onclick="alert('Glisse ce bouton dans ta barre de favoris, ne clique pas dessus ici !')">
+    ⚡ Bot Prix Malin
+  </a>
+  
+  <div class="step">
+    <div class="step-num">ÉTAPE 2</div>
+    <div class="step-desc">Va sur <strong>fd3-courses.leclercdrive.fr</strong>, clique sur le favori "Bot Prix Malin" — le bot s'active et ajoute automatiquement chaque produit au panier quand tu changes de page</div>
+  </div>
+  
+  <div class="step">
+    <div class="step-num">ÉTAPE 3</div>
+    <div class="step-desc">Lance le panier depuis <strong>Prix Malin</strong> en cliquant "Démarrer le panier" — l'app ouvre chaque produit, le bot clique Ajouter au panier</div>
+  </div>
+  
+  <div class="note">Le bot ne fonctionne que sur Leclerc Drive et ne collecte aucune donnée.</div>
+</div>
+</body>
+</html>

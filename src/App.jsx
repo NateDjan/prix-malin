@@ -92,6 +92,15 @@ const DRIVE = {
   lidl:        { note: 'Disponible sur lidl.fr',                            url: q => `https://www.lidl.fr/recherche?q=${encodeURIComponent(q)}` },
 }
 
+const CART_URLS = {
+  leclerc: 'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/mon-panier.aspx',
+  carrefour: 'https://www.carrefour.fr/mon-panier',
+  intermarche: 'https://www.intermarche.com/panier',
+  auchan: 'https://www.auchan.fr/panier',
+  monoprix: 'https://www.monoprix.fr/panier',
+  lidl: 'https://www.lidl.fr/'
+}
+
 function ProgressBar({ total, cur, storeName, onClose }) {
   if (cur === null) return null
   const done = cur >= total
@@ -158,6 +167,10 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
   const [cpInput, setCpInput] = useState('')
   const [cartProgress, setCartProgress] = useState(null)
   const [cartTotal, setCartTotal] = useState(0)
+  const [opened, setOpened] = useState(()=>{try{return JSON.parse(localStorage.getItem('pm_opened')||'{}')}catch{return{}}})
+  const markOpen = (sid,i) => { const o={...opened,[sid+'_'+i]:true}; setOpened(o); localStorage.setItem('pm_opened',JSON.stringify(o)) }
+  const isOpen = (sid,i) => !!opened[sid+'_'+i]
+  const resetOpen = () => { setOpened({}); localStorage.removeItem('pm_opened') }
   const { products, store: storeName, total, date } = result
   const base = products.reduce((a,p)=>a+(p.price||0),0)
   const ecoAmt = ecoTotal(products, realPrices)
@@ -187,26 +200,34 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
       )})}
     </div>
     {store&&store!=='ecomix'&&currentStore&&(<div>
-      <div className="notice"><div className="notice-title">🔐 Avant de démarrer</div><div className="notice-sub">{DRIVE[store]?.note}</div></div>
-      <button className="btn-cart" style={{background:currentStore.color}} onClick={()=>{
-  setCartProgress(0);
-  startCart(store,products,DRIVE,cur=>setCartProgress(cur));
-  setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||uniqueCount);},200)
-}}>
-        🛒 Remplir panier {currentStore.name} ({uniqueCount} produits)
-      </button>
-      <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,store,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
+      <div className="notice"><div className="notice-title">🔐 {currentStore.name}</div><div className="notice-sub">{DRIVE[store]?.note}<br/>Clique <strong style={{color:'#5BF5A8'}}>Ouvrir</strong> sur chaque produit, ajoute-le au panier sur le site, puis passe au suivant.</div></div>
+      {(()=>{const cnt=products.filter((_,i)=>isOpen(store,i)).length; return cnt>0?(<div style={{display:'flex',gap:8,marginBottom:10}}>
+        <div style={{flex:1,background:'rgba(91,245,168,.1)',borderRadius:10,padding:'10px 14px',textAlign:'center'}}><span style={{color:'#5BF5A8',fontWeight:800,fontSize:14}}>{cnt}/{products.length}</span><div style={{fontSize:11,color:'rgba(240,237,232,.4)'}}>ouverts</div></div>
+        <a href={CART_URLS[store]||'#'} target="_blank" rel="noopener noreferrer" style={{flex:1,background:currentStore.color,borderRadius:10,padding:'10px 14px',textAlign:'center',textDecoration:'none',color:'#fff',fontWeight:800,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center'}}>🛒 Voir mon panier ↗</a>
+      </div>):null})()}
+      {(()=>{const cnt=products.filter((_,i)=>isOpen(store,i)).length; return cnt>0?<button onClick={resetOpen} style={{background:'none',border:'none',color:'rgba(240,237,232,.3)',fontSize:11,cursor:'pointer',marginBottom:8,fontFamily:'inherit'}}>Réinitialiser les coches</button>:null})()}
+      <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,store,realPrices); const done=isOpen(store,i); const url=DRIVE[store]?.url(p.search)||'#'; return (<div key={i} className="product" style={done?{opacity:.5}:{}}>
+        <div style={{flex:1,minWidth:0}}><div className="p-name">{done?'✅ ':''}{p.search}</div><div className="p-orig">{p.original}</div></div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div>
+          <a href={url} target="_blank" rel="noopener noreferrer" onClick={()=>markOpen(store,i)} style={{background:done?'rgba(91,245,168,.15)':currentStore.color,color:done?'#5BF5A8':'#fff',padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}}>{done?'✅':'🔗 Ouvrir'}</a>
+        </div>
+      </div>) })}</div>
     </div>)}
-    {store==='ecomix'&&(()=>{ const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b); return (<div>
-      <div className="notice"><div className="notice-title">🌿 Eco-Mix</div><div className="notice-sub">Chaque produit dans l&apos;enseigne la moins chère.</div></div>
-      <button className="btn-cart" style={{background:'linear-gradient(135deg,#5BF5A8,#00C97A)',color:'#0A0A0F'}} onClick={()=>{
-  setCartProgress(0);
-  startCart(bestS.id,products,DRIVE,cur=>setCartProgress(cur));
-  setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||uniqueCount);},200)
-}}>
-        🛒 Remplir panier Eco-Mix ({uniqueCount} produits)
-      </button>
-      <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,bestS.id,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
+    {store==='ecomix'&&(()=>{ const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b); const cfg=DRIVE[bestS.id]; return (<div>
+      <div className="notice"><div className="notice-title">🌿 Eco-Mix · {bestS.name}</div><div className="notice-sub">Clique <strong style={{color:'#5BF5A8'}}>Ouvrir</strong> pour chaque produit, ajoute-le au panier sur le site, puis passe au suivant.</div></div>
+      {(()=>{const cnt=products.filter((_,i)=>isOpen(bestS.id,i)).length; return cnt>0?(<div style={{display:'flex',gap:8,marginBottom:10}}>
+        <div style={{flex:1,background:'rgba(91,245,168,.1)',borderRadius:10,padding:'10px 14px',textAlign:'center'}}><span style={{color:'#5BF5A8',fontWeight:800,fontSize:14}}>{cnt}/{products.length}</span><div style={{fontSize:11,color:'rgba(240,237,232,.4)'}}>ouverts</div></div>
+        <a href={CART_URLS[bestS.id]||'#'} target="_blank" rel="noopener noreferrer" style={{flex:1,background:'#5BF5A8',borderRadius:10,padding:'10px 14px',textAlign:'center',textDecoration:'none',color:'#0A0A0F',fontWeight:800,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center'}}>🛒 Voir mon panier ↗</a>
+      </div>):null})()}
+      {(()=>{const cnt=products.filter((_,i)=>isOpen(bestS.id,i)).length; return cnt>0?<button onClick={resetOpen} style={{background:'none',border:'none',color:'rgba(240,237,232,.3)',fontSize:11,cursor:'pointer',marginBottom:8,fontFamily:'inherit'}}>Réinitialiser les coches</button>:null})()}
+      <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,bestS.id,realPrices); const done=isOpen(bestS.id,i); const url=cfg?.url(p.search)||'#'; return (<div key={i} className="product" style={done?{opacity:.5}:{}}>
+        <div style={{flex:1,minWidth:0}}><div className="p-name">{done?'✅ ':''}{p.search}</div><div className="p-orig">{p.original}</div></div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div>
+          <a href={url} target="_blank" rel="noopener noreferrer" onClick={()=>markOpen(bestS.id,i)} style={{background:done?'rgba(91,245,168,.15)':bestS.color,color:done?'#5BF5A8':'#fff',padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}}>{done?'✅':'🔗 Ouvrir'}</a>
+        </div>
+      </div>) })}</div>
     </div>) })()}
     {!cp&&(<div className="cp-box"><div className="cp-label">📍 Code postal pour les vrais prix</div><div className="cp-row"><input className="cp-input" type="text" placeholder="Ex: 92410" maxLength={5} value={cpInput} onChange={e=>setCpInput(e.target.value)}/><button className="cp-btn" onClick={()=>{if(cpInput.length>=4){onSetCp(cpInput);onFetchPrices(products,cpInput)}}}>OK</button></div></div>)}
     {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar total={cartTotal||products.length} cur={cartProgress} storeName={s?.name||''} onClose={()=>{stopCart();setCartProgress(null)}} /> })()}
