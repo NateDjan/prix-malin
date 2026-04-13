@@ -1,77 +1,14 @@
-// cart.js — passe la queue via window.name (persiste cross-navigation, cross-origin lisible)
-// Un script autopilote est injecté dans l'onglet Leclerc par l'extension Claude
+// cart.js — ouvre l'onglet Leclerc, stocke la queue dans window.name
+// L'extension Claude injecte le script autopilote après chaque chargement de page
 
 let _running = false
 let _win = null
 
 export function stopCart() {
   _running = false
-  if (_win && !_win.closed) {
-    try { _win.name = '' } catch(e) {}
-  }
   _win = null
   localStorage.removeItem('pm_cart')
 }
-
-// Script autopilote injecté dans chaque page Leclerc
-// Lit window.name, clique le bon bouton, navigue au suivant
-export const AUTOPILOT_SCRIPT = `
-(function() {
-  if (!window.name || !window.name.startsWith('pm:')) return;
-  try {
-    var data = JSON.parse(window.name.slice(3));
-    var queue = data.queue, idx = data.idx, total = data.total;
-    if (idx >= total) { document.title = '✅ Panier complet'; return; }
-
-    // Attendre que la page charge puis cliquer
-    function clickBtn() {
-      var li = document.querySelector('#ulListeProduits > li');
-      var clicked = false;
-      ['#ulListeProduits > li .aWCRS310_Add',
-       '#ulListeProduits > li .aWCRS310_More'].forEach(function(sel) {
-        if (clicked) return;
-        var btn = document.querySelector(sel);
-        if (!btn) return;
-        var r = btn.getBoundingClientRect();
-        if (r.width > 0) {
-          // Essayer jQuery trigger d'abord
-          if (window.jQuery) {
-            window.jQuery(btn).trigger('click');
-          } else {
-            btn.click();
-          }
-          clicked = true;
-        }
-      });
-      return clicked;
-    }
-
-    // Attendre 3s que la page soit prête, cliquer, puis passer au suivant
-    var attempts = 0;
-    var interval = setInterval(function() {
-      attempts++;
-      if (document.readyState === 'complete' && attempts >= 3) {
-        clearInterval(interval);
-        var ok = clickBtn();
-        document.title = (ok ? '✅' : '⚠️') + ' ' + (idx+1) + '/' + total;
-
-        // Mettre à jour idx et naviguer au suivant
-        setTimeout(function() {
-          data.idx = idx + 1;
-          data.done = idx + 1;
-          window.name = 'pm:' + JSON.stringify(data);
-          if (idx + 1 < total) {
-            window.location.href = queue[idx + 1].url;
-          } else {
-            window.name = 'pm:done';
-            document.title = '✅ Panier complet!';
-          }
-        }, 1800);
-      }
-    }, 1000);
-  } catch(e) { console.error('Autopilot error:', e); }
-})();
-`
 
 export function startCart(storeId, products, driveConfig, onProgress) {
   if (_running) return
@@ -88,42 +25,34 @@ export function startCart(storeId, products, driveConfig, onProgress) {
   })
 
   const queue = unique.map(p => ({ search: p.search, url: cfg.url(p.search) }))
-  const queueData = { queue, idx: 0, total: queue.length, done: 0 }
 
   // Stocker dans localStorage pour la progress bar
   localStorage.setItem('pm_cart', JSON.stringify({
-    storeId, queue, total: queue.length, done: 0, status: 'waiting'
+    storeId, queue, total: queue.length, done: 0, status: 'running'
   }))
 
-  // Ouvrir l'onglet et passer la queue via window.name
-  const w = window.open('about:blank', '_cart_lec')
-  if (!w) { _running = false; return }
+  // Ouvrir DIRECTEMENT sur le 1er produit — pas de about:blank
+  const w = window.open(queue[0].url, '_cart_lec')
   _win = w
 
-  // Injecter les données AVANT la navigation (window.name cross-origin)
-  w.name = 'pm:' + JSON.stringify(queueData)
-  setTimeout(() => { w.location.href = queue[0].url }, 150)
+  // Exposer sur window pour que l'extension puisse lire la queue
+  window._pmCart = { queue, total: queue.length }
 
   onProgress(0)
 
-  // Poller window.name du tab Leclerc pour mettre à jour la progress bar
+  // Poller localStorage.done pour la progress bar
   ;(async () => {
     while (_running) {
-      await new Promise(r => setTimeout(r, 800))
+      await new Promise(r => setTimeout(r, 700))
       try {
-        if (!_win || _win.closed) { _running = false; break }
-        const name = _win.name  // accessible cross-origin!
-        if (!name || !name.startsWith('pm:')) continue
-        if (name === 'pm:done') { onProgress(queue.length); _running = false; break }
-        const data = JSON.parse(name.slice(3))
-        const done = data.done || 0
-        onProgress(done)
-        // Sync localStorage pour compatibilité
-        const lsData = JSON.parse(localStorage.getItem('pm_cart') || '{}')
-        lsData.done = done
-        localStorage.setItem('pm_cart', JSON.stringify(lsData))
-        if (done >= queue.length) { _running = false; break }
-      } catch(e) {}
+        const raw = localStorage.getItem('pm_cart')
+        if (!raw) { _running = false; break }
+        const data = JSON.parse(raw)
+        onProgress(data.done || 0)
+        if ((data.done || 0) >= data.total || data.status === 'done') {
+          _running = false; break
+        }
+      } catch(e) { break }
     }
     _running = false
   })()

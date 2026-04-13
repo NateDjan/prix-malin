@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import { startCart, stopCart, AUTOPILOT_SCRIPT } from './cart.js'
+import { startCart, stopCart } from './cart.js'
 
 const STORES = [
   { id: 'leclerc',     name: 'E.Leclerc',   letter: 'E', color: '#0052CC', factor: 1.00 },
@@ -191,13 +191,7 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
       <button className="btn-cart" style={{background:currentStore.color}} onClick={()=>{
   setCartProgress(0);
   startCart(store,products,DRIVE,cur=>setCartProgress(cur));
-  setTimeout(()=>{
-    const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');
-    setCartTotal(d.total||uniqueCount);
-    // Injecter le script autopilote dans l'onglet Leclerc
-    const w=window.open('','_cart_lec');
-    if(w){try{const s=w.document.createElement('script');s.textContent=AUTOPILOT_SCRIPT;w.document.head.appendChild(s);}catch(e){}}
-  },2500)
+  setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||uniqueCount);},200)
 }}>
         🛒 Remplir panier {currentStore.name} ({uniqueCount} produits)
       </button>
@@ -208,12 +202,7 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
       <button className="btn-cart" style={{background:'linear-gradient(135deg,#5BF5A8,#00C97A)',color:'#0A0A0F'}} onClick={()=>{
   setCartProgress(0);
   startCart(bestS.id,products,DRIVE,cur=>setCartProgress(cur));
-  setTimeout(()=>{
-    const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');
-    setCartTotal(d.total||uniqueCount);
-    const w=window.open('','_cart_lec');
-    if(w){try{const s=w.document.createElement('script');s.textContent=AUTOPILOT_SCRIPT;w.document.head.appendChild(s);}catch(e){}}
-  },2500)
+  setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||uniqueCount);},200)
 }}>
         🛒 Remplir panier Eco-Mix ({uniqueCount} produits)
       </button>
