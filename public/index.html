@@ -179,28 +179,63 @@ function est(prods,sid){const s=STORES.find(x=>x.id===sid);if(!s)return 0;return
 function emAmt(prods){return +(prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0)*Math.min(...STORES.map(s=>s.factor))).toFixed(2);}
 function emSave(prods){const base=prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0);return +(base*(STORES.reduce((a,s)=>a+s.factor,0)/STORES.length-Math.min(...STORES.map(s=>s.factor)))).toFixed(2);}
 
-let _run=false;
-async function startCart(sid,prods){
-  if(_run)return;_run=true;
-  const cfg=DRIVE[sid];if(!cfg){alert('Non configuré');_run=false;return;}
-  showProg(prods,0,cfg.name);
-  const w=window.open(cfg.url(prods[0].search),'_cart');
-  await new Promise(r=>setTimeout(r,4000));
-  for(let i=1;i<prods.length;i++){
-    if(!_run)break;showProg(prods,i,cfg.name);
-    if(w&&!w.closed)w.location.href=cfg.url(prods[i].search);
-    else window.open(cfg.url(prods[i].search),'_cart');
-    await new Promise(r=>setTimeout(r,4000));
-  }
-  showProg(prods,prods.length,cfg.name);_run=false;
+/* ═══ Panier pas-à-pas : l'utilisateur ajoute chaque produit lui-même ═══ */
+let _cart={win:null,prods:[],idx:0,sid:'',active:false};
+
+function startCart(sid,prods){
+  const cfg=DRIVE[sid];
+  if(!cfg){alert('Enseigne non configuree');return;}
+  if(_cart.active)return;
+  _cart={win:null,prods:prods,idx:0,sid:sid,active:true};
+  // Ouvrir le 1er produit (clic synchrone = pas bloque par le navigateur)
+  _cart.win=window.open(cfg.url(prods[0].search),'prix_malin_drive');
+  renderCartBar();
 }
 
-function showProg(prods,cur,name){
-  let el=document.getElementById('_prog');
-  if(!el){el=document.createElement('div');el.id='_prog';el.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#0A0A0F;border-top:2px solid #5BF5A8;padding:14px 20px;z-index:999';document.body.appendChild(el);}
-  if(cur>=prods.length){el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#5BF5A8;font-weight:800">✅ '+prods.length+' produits sur '+name+'</span><button onclick="document.getElementById(\'_prog\').remove()" style="background:none;border:1px solid rgba(240,237,232,.2);color:rgba(240,237,232,.4);padding:4px 10px;border-radius:8px;cursor:pointer;font-family:inherit">Fermer</button></div>';return;}
-  const pct=Math.round(cur/prods.length*100);
-  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="color:#5BF5A8;font-weight:800;font-size:13px">🛒 '+cur+'/'+prods.length+' · '+name+'</span><button onclick="_run=false;document.getElementById(\'_prog\').remove()" style="background:none;border:1px solid rgba(240,237,232,.2);color:rgba(240,237,232,.4);padding:4px 10px;border-radius:8px;cursor:pointer;font-size:11px;font-family:inherit">Annuler</button></div><div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;margin-bottom:8px"><div style="background:#5BF5A8;height:6px;border-radius:4px;width:'+pct+'%;transition:width .4s"></div></div><div style="font-size:12px;color:rgba(240,237,232,.5)">📦 '+prods[cur].search+'</div>';
+function cartNext(){
+  _cart.idx++;
+  if(_cart.idx>=_cart.prods.length){cartDone();return;}
+  const cfg=DRIVE[_cart.sid];
+  const url=cfg.url(_cart.prods[_cart.idx].search);
+  try{if(_cart.win&&!_cart.win.closed){_cart.win.location.href=url;}else{_cart.win=window.open(url,'prix_malin_drive');}}catch(e){_cart.win=window.open(url,'prix_malin_drive');}
+  renderCartBar();
+}
+
+function cartDone(){
+  _cart.active=false;
+  const el=document.getElementById('_cbar');
+  if(!el)return;
+  const n=_cart.prods.length;
+  const name=DRIVE[_cart.sid]?.name||'';
+  el.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between"><div><span style="font-size:18px">🎉</span> <span style="color:#5BF5A8;font-weight:800;font-size:14px">'+n+' produits ouverts sur '+name+'</span></div><button onclick="document.getElementById(\'_cbar\').remove()" style="background:rgba(255,255,255,.1);border:none;color:#F0EDE8;padding:8px 14px;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:700">Fermer</button></div>';
+}
+
+function cartStop(){
+  _cart.active=false;
+  try{if(_cart.win&&!_cart.win.closed)_cart.win.close();}catch(e){}
+  const el=document.getElementById('_cbar');if(el)el.remove();
+}
+
+function renderCartBar(){
+  let el=document.getElementById('_cbar');
+  if(!el){el=document.createElement('div');el.id='_cbar';el.style.cssText='position:fixed;bottom:0;left:0;right:0;background:linear-gradient(to top,#0A0A0F,#121218);border-top:2px solid #5BF5A8;padding:14px 16px;z-index:9999;box-shadow:0 -4px 20px rgba(0,0,0,.6)';document.body.appendChild(el);}
+  const p=_cart.prods[_cart.idx];
+  const cur=_cart.idx+1;
+  const tot=_cart.prods.length;
+  const pct=Math.round(cur/tot*100);
+  const name=DRIVE[_cart.sid]?.name||'';
+  el.innerHTML=
+    '<div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">'+
+      '<span style="color:#5BF5A8;font-weight:800;font-size:13px">🛒 '+cur+'/'+tot+' · '+name+'</span>'+
+      '<button onclick="cartStop()" style="background:none;border:1px solid rgba(255,80,80,.3);color:#ff9090;padding:4px 10px;border-radius:8px;cursor:pointer;font-size:11px;font-family:inherit">Arreter</button>'+
+    '</div>'+
+    '<div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;margin-bottom:10px"><div style="background:#5BF5A8;height:6px;border-radius:4px;width:'+pct+'%;transition:width .4s"></div></div>'+
+    '<div style="font-size:13px;color:#F0EDE8;font-weight:600;margin-bottom:4px">'+p.search+'</div>'+
+    '<div style="font-size:11px;color:rgba(240,237,232,.4);margin-bottom:12px">'+p.original+'</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="cartNext()" style="flex:1;padding:12px;border-radius:12px;border:none;background:#5BF5A8;color:#0A0A0F;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit">'+(cur<tot?'✅ Suivant ('+cur+'/'+tot+')':'✅ Terminer')+'</button>'+
+    '</div>'+
+    '<div style="text-align:center;margin-top:8px;font-size:11px;color:rgba(240,237,232,.35)">Ajoute le produit au panier sur le site, puis clique Suivant</div>';
 }
 
 function render(){
@@ -251,8 +286,8 @@ function render(){
     h+='</div>';
     if(store==='ecomix'){
       const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b);
-      h+='<div class="login-notice"><div class="login-title">🌿 Eco-Mix</div><div class="login-sub">Chaque produit achet\u00e9 dans l\'enseigne la moins ch\u00e8re.</div></div>';
-      h+='<button class="btn-cart" style="background:linear-gradient(135deg,#5BF5A8,#00C97A);color:#0A0A0F" onclick="startCart(\''+bestS.id+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier Eco-Mix ('+prods.length+' produits)</button>';
+      h+='<div class="login-notice"><div class="login-title">🌿 Eco-Mix</div><div class="login-sub">Chaque produit achet\u00e9 dans l\'enseigne la moins ch\u00e8re.<br><br><strong style="color:#F0EDE8">Comment \u00e7a marche :</strong> Chaque produit s\'ouvre un par un. Tu ajoutes au panier sur le site, puis tu cliques Suivant.</div></div>';
+      h+='<button class="btn-cart" style="background:linear-gradient(135deg,#5BF5A8,#00C97A);color:#0A0A0F" onclick="startCart(\''+bestS.id+'\','+JSON.stringify(prods)+')">🛒 D\u00e9marrer le panier Eco-Mix pas-\u00e0-pas ('+prods.length+' produits)</button>';
       h+='<div class="products">';
       prods.forEach(p=>{
         const rp=getRealPrice(p.search,bestS.id);
@@ -263,7 +298,7 @@ function render(){
     } else if(store){
       const s=STORES.find(x=>x.id===store);
       const cfg=DRIVE[store];
-      if(cfg)h+='<div class="login-notice"><div class="login-title">🔐 Avant de démarrer</div><div class="login-sub">'+cfg.note+'</div></div><button class="btn-cart" style="background:'+s.color+'" onclick="startCart(\''+store+'\','+JSON.stringify(prods)+')">🛒 Démarrer le panier ('+prods.length+' produits)</button>';
+      if(cfg)h+='<div class="login-notice"><div class="login-title">🔐 Avant de d\u00e9marrer</div><div class="login-sub">'+cfg.note+'<br><br><strong style="color:#F0EDE8">Fonctionnement :</strong> Chaque produit s\'ouvre un par un. Ajoute-le au panier sur le site, puis clique <strong style="color:#5BF5A8">Suivant</strong>.</div></div><button class="btn-cart" style="background:'+s.color+'" onclick="startCart(\''+store+'\','+JSON.stringify(prods)+')">🛒 D\u00e9marrer le panier pas-\u00e0-pas ('+prods.length+' produits)</button>';
       h+='<div class="products">';
       prods.forEach(p=>{
         const rp=getRealPrice(p.search,store);
