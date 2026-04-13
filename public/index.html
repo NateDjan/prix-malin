@@ -179,64 +179,72 @@ function est(prods,sid){const s=STORES.find(x=>x.id===sid);if(!s)return 0;return
 function emAmt(prods){return +(prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0)*Math.min(...STORES.map(s=>s.factor))).toFixed(2);}
 function emSave(prods){const base=prods.reduce((a,p)=>a+(p.price||0)*(p.qty||1),0);return +(base*(STORES.reduce((a,s)=>a+s.factor,0)/STORES.length-Math.min(...STORES.map(s=>s.factor)))).toFixed(2);}
 
-/* ═══ Panier pas-à-pas : l'utilisateur ajoute chaque produit lui-même ═══ */
-let _cart={win:null,prods:[],idx:0,sid:'',active:false};
+/* ═══ Panier pas-a-pas avec persistance localStorage ═══ */
+function _cartState(){try{return JSON.parse(localStorage.getItem('_pmc')||'null');}catch(e){return null;}}
+function _cartSave(st){localStorage.setItem('_pmc',JSON.stringify(st));}
+function _cartClear(){localStorage.removeItem('_pmc');}
 
 function startCart(sid,prods){
   const cfg=DRIVE[sid];
   if(!cfg){alert('Enseigne non configuree');return;}
-  if(_cart.active)return;
-  _cart={win:null,prods:prods,idx:0,sid:sid,active:true};
-  // Ouvrir le 1er produit (clic synchrone = pas bloque par le navigateur)
-  _cart.win=window.open(cfg.url(prods[0].search),'prix_malin_drive');
-  renderCartBar();
+  // Sauvegarder l'etat dans localStorage AVANT d'ouvrir l'onglet
+  const st={prods:prods,idx:0,sid:sid};
+  _cartSave(st);
+  renderCartBar(st);
+  // Ouvrir le 1er produit dans un nouvel onglet (clic synchrone = pas bloque)
+  window.open(cfg.url(prods[0].search),'prix_malin_drive');
 }
 
 function cartNext(){
-  _cart.idx++;
-  if(_cart.idx>=_cart.prods.length){cartDone();return;}
-  const cfg=DRIVE[_cart.sid];
-  const url=cfg.url(_cart.prods[_cart.idx].search);
-  try{if(_cart.win&&!_cart.win.closed){_cart.win.location.href=url;}else{_cart.win=window.open(url,'prix_malin_drive');}}catch(e){_cart.win=window.open(url,'prix_malin_drive');}
-  renderCartBar();
+  const st=_cartState();if(!st)return;
+  st.idx++;
+  if(st.idx>=st.prods.length){cartDone(st);return;}
+  _cartSave(st);
+  renderCartBar(st);
+  const cfg=DRIVE[st.sid];
+  // Ouvrir le produit suivant dans le meme onglet drive
+  window.open(cfg.url(st.prods[st.idx].search),'prix_malin_drive');
 }
 
-function cartDone(){
-  _cart.active=false;
+function cartDone(st){
+  _cartClear();
   const el=document.getElementById('_cbar');
   if(!el)return;
-  const n=_cart.prods.length;
-  const name=DRIVE[_cart.sid]?.name||'';
-  el.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between"><div><span style="font-size:18px">🎉</span> <span style="color:#5BF5A8;font-weight:800;font-size:14px">'+n+' produits ouverts sur '+name+'</span></div><button onclick="document.getElementById(\'_cbar\').remove()" style="background:rgba(255,255,255,.1);border:none;color:#F0EDE8;padding:8px 14px;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:700">Fermer</button></div>';
+  const n=st.prods.length;
+  const name=DRIVE[st.sid]?.name||'';
+  el.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between"><div><span style="font-size:18px">🎉</span> <span style="color:#5BF5A8;font-weight:800;font-size:14px">'+n+' produits traites sur '+name+'</span></div><button onclick="document.getElementById(\'_cbar\').remove()" style="background:rgba(255,255,255,.1);border:none;color:#F0EDE8;padding:8px 14px;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:700">Fermer</button></div>';
 }
 
 function cartStop(){
-  _cart.active=false;
-  try{if(_cart.win&&!_cart.win.closed)_cart.win.close();}catch(e){}
+  _cartClear();
   const el=document.getElementById('_cbar');if(el)el.remove();
 }
 
-function renderCartBar(){
+function renderCartBar(st){
+  if(!st)st=_cartState();
+  if(!st||st.idx>=st.prods.length)return;
   let el=document.getElementById('_cbar');
   if(!el){el=document.createElement('div');el.id='_cbar';el.style.cssText='position:fixed;bottom:0;left:0;right:0;background:linear-gradient(to top,#0A0A0F,#121218);border-top:2px solid #5BF5A8;padding:14px 16px;z-index:9999;box-shadow:0 -4px 20px rgba(0,0,0,.6)';document.body.appendChild(el);}
-  const p=_cart.prods[_cart.idx];
-  const cur=_cart.idx+1;
-  const tot=_cart.prods.length;
+  const p=st.prods[st.idx];
+  const cur=st.idx+1;
+  const tot=st.prods.length;
   const pct=Math.round(cur/tot*100);
-  const name=DRIVE[_cart.sid]?.name||'';
+  const name=DRIVE[st.sid]?.name||'';
   el.innerHTML=
     '<div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">'+
       '<span style="color:#5BF5A8;font-weight:800;font-size:13px">🛒 '+cur+'/'+tot+' · '+name+'</span>'+
       '<button onclick="cartStop()" style="background:none;border:1px solid rgba(255,80,80,.3);color:#ff9090;padding:4px 10px;border-radius:8px;cursor:pointer;font-size:11px;font-family:inherit">Arreter</button>'+
     '</div>'+
     '<div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;margin-bottom:10px"><div style="background:#5BF5A8;height:6px;border-radius:4px;width:'+pct+'%;transition:width .4s"></div></div>'+
-    '<div style="font-size:13px;color:#F0EDE8;font-weight:600;margin-bottom:4px">'+p.search+'</div>'+
+    '<div style="font-size:13px;color:#F0EDE8;font-weight:600;margin-bottom:4px">📦 '+p.search+'</div>'+
     '<div style="font-size:11px;color:rgba(240,237,232,.4);margin-bottom:12px">'+p.original+'</div>'+
     '<div style="display:flex;gap:8px">'+
-      '<button onclick="cartNext()" style="flex:1;padding:12px;border-radius:12px;border:none;background:#5BF5A8;color:#0A0A0F;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit">'+(cur<tot?'✅ Suivant ('+cur+'/'+tot+')':'✅ Terminer')+'</button>'+
+      '<button onclick="cartNext()" style="flex:1;padding:12px;border-radius:12px;border:none;background:#5BF5A8;color:#0A0A0F;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit">'+(cur<tot?'✅ Produit ajoute → Suivant ('+cur+'/'+tot+')':'✅ Terminer')+'</button>'+
     '</div>'+
-    '<div style="text-align:center;margin-top:8px;font-size:11px;color:rgba(240,237,232,.35)">Ajoute le produit au panier sur le site, puis clique Suivant</div>';
+    '<div style="text-align:center;margin-top:8px;font-size:11px;color:rgba(240,237,232,.35)">Ajoute ce produit au panier sur l\'onglet du drive, puis reviens ici et clique Suivant</div>';
 }
+// Restaurer la barre panier si session active au chargement
+(function(){const st=_cartState();if(st&&st.idx<st.prods.length)setTimeout(()=>renderCartBar(st),100);})()
 
 function render(){
   const {catId,sec,status,msg,results,store}=S;
