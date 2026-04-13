@@ -105,17 +105,46 @@ export function startCart(storeId, products, driveConfig, onProgress) {
     storeId, queue, total: queue.length, done: 0, status: 'running'
   }))
 
-  // Ouvrir l'onglet Leclerc
+  // Ouvrir about:blank en premier (même origin) pour pouvoir définir window.name
+  // window.name persiste lors de la navigation vers Leclerc (cross-origin)
   const searchUrl = 'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche=' + encodeURIComponent(queue[0].search)
-  const w = window.open(searchUrl, '_cart_lec')
+  const w = window.open('about:blank', '_cart_lec')
   _win = w
 
   if (w) {
-    setTimeout(() => {
-      try {
-        w.name = 'pm:' + JSON.stringify({ queue, storeNum, catalog: catalogToPass })
-      } catch(e) {}
-    }, 50)
+    // Définir window.name MAINTENANT (même origin = ça marche)
+    const pmData = JSON.stringify({ queue, storeNum, catalog: catalogToPass })
+    w.name = 'pm:' + pmData
+
+    // Écrire le PILOT dans la page about:blank — il se lance, lit window.name,
+    // navigue vers Leclerc (window.name persiste), fait tous les ajouts
+    const pilotWithNav = PILOT.replace(
+      '})();',
+      // Injecter la navigation vers Leclerc dans le pilot AVANT les ajouts au panier
+      '  // Naviguer vers Leclerc pour être same-origin et pouvoir appeler panier.aspx\n' +
+      '  window.location.href = ' + JSON.stringify(searchUrl) + ';\n' +
+      '})();'
+    )
+
+    // En fait le pilot doit s'exécuter DEPUIS Leclerc (same-origin pour panier.aspx)
+    // Donc : écrire un script qui navigue vers Leclerc + le script se ré-exécute au chargement
+    // via window.name qu'on a déjà set
+    
+    // Solution: écrire un script qui navigue, et le PILOT sera injecté par l'extension
+    // OU: utiliser un meta-refresh vers Leclerc + script onload
+    try {
+      w.document.open()
+      w.document.write('<html><head><meta charset="utf-8"></head><body>' +
+        '<script>' +
+        // Ce script tourne sur about:blank (même origin que Prix Malin momentanément)
+        // Il navigue vers Leclerc. window.name persiste.
+        // Puis l'extension injecte le PILOT dans l'onglet Leclerc.
+        'window.location.href=' + JSON.stringify(searchUrl) + ';' +
+        '</' + 'script></body></html>')
+      w.document.close()
+    } catch(e) {
+      w.location.href = searchUrl
+    }
   }
 
   window._pmPilot = PILOT
