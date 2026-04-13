@@ -1,6 +1,5 @@
-// cart.js — Automatisation Leclerc Drive via API directe
-// Le script est injecté dans l'onglet Leclerc par l'extension Claude
-// Pas de navigation entre pages — tout via fetch + panier.aspx
+// cart.js — Automatisation Leclerc Drive via API directe panier.aspx
+// Le PILOT script s'injecte dans l'onglet Leclerc via localStorage passé dans window.name
 
 let _running = false
 let _win = null
@@ -11,15 +10,13 @@ export function stopCart() {
   localStorage.removeItem('pm_cart')
 }
 
-// ═══════════════════════════════════════════════
-// Script injecté dans l'onglet Leclerc par l'extension
-// S'auto-exécute et traite toute la queue via l'API Leclerc
-// ═══════════════════════════════════════════════
-export const PILOT = `(async function() {
-  const data = JSON.parse(localStorage.getItem('pm_pilot') || 'null');
-  if (!data || !data.queue) return;
-  const { queue, storeNum } = data;
-  
+// Script injecté dans l'onglet Leclerc — s'exécute seul, appelle l'API pour chaque produit
+export const PILOT = `(async function pilot() {
+  let data;
+  try { data = JSON.parse(window.name.startsWith('pm:') ? window.name.slice(3) : 'null'); } catch(e) {}
+  if (!data?.queue) { console.log('PM: no queue in window.name'); return; }
+  const { queue, storeNum, pmOrigin } = data;
+
   async function getProductId(search) {
     const url = location.origin + '/magasin-' + storeNum + '-' + storeNum +
       '-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche=' + encodeURIComponent(search);
@@ -27,7 +24,7 @@ export const PILOT = `(async function() {
     const m = html.match(/"iIdProduit":"?(\\d+)"?/);
     return m?.[1] || null;
   }
-  
+
   async function addToCart(id, search) {
     const body = 'd=' + encodeURIComponent(JSON.stringify({
       eTypeAction: 1, iIdProduit: String(id), iQuantite: 1,
@@ -41,28 +38,31 @@ export const PILOT = `(async function() {
     });
     return res.ok;
   }
-  
+
   window._pmRunning = true;
+  window._pmDone = 0;
+  window._pmTotal = queue.length;
+
   for (let i = 0; i < queue.length; i++) {
     if (!window._pmRunning) break;
     const { search } = queue[i];
-    document.title = '⏳ ' + (i+1) + '/' + queue.length + ' — ' + search;
+    document.title = '\u23f3 ' + (i+1) + '/' + queue.length + ' \u2014 ' + search;
     try {
       const id = await getProductId(search);
-      if (id) {
-        await addToCart(id, search);
-      }
+      if (id) await addToCart(id, search);
+    } catch(e) { console.error('PM pilot error:', e); }
+    window._pmDone = i + 1;
+    // Signaler la progression via window.name (lisible depuis Prix Malin cross-origin)
+    try {
+      window.name = 'pm:' + JSON.stringify({ ...data, done: i + 1 });
     } catch(e) {}
-    // Mettre à jour localStorage pour la progress bar de Prix Malin
-    const pm = JSON.parse(localStorage.getItem('pm_cart') || '{}');
-    pm.done = i + 1;
-    localStorage.setItem('pm_cart', JSON.stringify(pm));
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 700));
   }
+
   window._pmRunning = false;
-  document.title = '✅ Panier complet ! ' + queue.length + ' produits';
-  location.reload(); // Recharger pour voir le vrai total
-})()`
+  document.title = '\u2705 Panier complet ! ' + queue.length + ' produits ajout\u00e9s';
+  window.name = 'pm:done';
+})();`
 
 export function startCart(storeId, products, driveConfig, onProgress) {
   if (_running) return
@@ -81,41 +81,44 @@ export function startCart(storeId, products, driveConfig, onProgress) {
   const queue = unique.map(p => ({ search: p.search }))
   const storeNum = '169203'
 
-  // Stocker dans localStorage — accessible par l'onglet Leclerc (même si cross-origin, on utilise pm_pilot)
-  // NOTE: localStorage est same-origin donc Leclerc ne peut pas lire pm_cart de prix-malin
-  // On passe via window.name que le script lit
   localStorage.setItem('pm_cart', JSON.stringify({
     storeId, queue, total: queue.length, done: 0, status: 'running'
   }))
 
-  // Ouvrir l'onglet Leclerc
-  const homeUrl = 'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/default.aspx'
+  // Ouvrir l'onglet Leclerc sur la page d'accueil
+  const homeUrl = 'https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche=' + encodeURIComponent(queue[0].search)
   const w = window.open(homeUrl, '_cart_lec')
   _win = w
 
-  // Passer la queue via window.name (lisible depuis l'onglet Leclerc)
   if (w) {
-    try { w.name = 'pm_pilot:' + JSON.stringify({ queue, storeNum }) } catch(e) {}
+    // Passer la queue via window.name AVANT la navigation (même origin momentanément)
+    setTimeout(() => {
+      try {
+        w.name = 'pm:' + JSON.stringify({ queue, storeNum })
+      } catch(e) {}
+    }, 50)
   }
 
-  // Exposer pour que l'extension puisse injecter le pilote
-  window._pmQueue = queue
-  window._pmStoreNum = storeNum
+  // Exposer le script pilote pour que l'extension puisse l'injecter
   window._pmPilot = PILOT
+  window._pmWin = w
 
   onProgress(0)
 
-  // Poller pm_cart.done pour la progress bar
+  // Poller window.name du tab Leclerc pour la progress bar (window.name est cross-origin readable)
   ;(async () => {
+    await new Promise(r => setTimeout(r, 3000)) // Laisser la page charger
     while (_running) {
       await new Promise(r => setTimeout(r, 800))
       try {
-        const raw = localStorage.getItem('pm_cart')
-        if (!raw) { _running = false; break }
-        const d = JSON.parse(raw)
-        onProgress(d.done || 0)
-        if ((d.done || 0) >= d.total) { _running = false; break }
-      } catch(e) { break }
+        if (!_win || _win.closed) { _running = false; break }
+        const name = _win.name
+        if (name === 'pm:done') { onProgress(queue.length); _running = false; break }
+        if (name?.startsWith('pm:')) {
+          const d = JSON.parse(name.slice(3))
+          onProgress(d.done || 0)
+        }
+      } catch(e) {}
     }
     _running = false
   })()
