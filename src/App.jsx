@@ -153,6 +153,7 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
   const ecoAmt = ecoTotal(products, realPrices)
   const hasReal = Object.keys(realPrices).length>0
   const currentStore = store&&store!=='ecomix'?STORES.find(x=>x.id===store):null
+  const uniqueCount = [...new Set(products.map(p=>p.search))].length
   return (<>
     <div className="ticket-info">
       <div><div className="ticket-store">{storeName||'Ticket'}</div><div className="ticket-meta">{date?`Le ${date} · `:''}{products.length} articles</div></div>
@@ -177,15 +178,15 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
     </div>
     {store&&store!=='ecomix'&&currentStore&&(<div>
       <div className="notice"><div className="notice-title">🔐 Avant de démarrer</div><div className="notice-sub">{DRIVE[store]?.note}</div></div>
-      <button className="btn-cart" style={{background:currentStore.color}} onClick={()=>{setCartProgress(0);startCart(store,products,DRIVE,cur=>setCartProgress(cur));setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||products.length)},100)}}>
-        🛒 Remplir panier {currentStore.name} ({products.length} produits)
+      <button className="btn-cart" style={{background:currentStore.color}} onClick={()=>{setCartProgress(0);startCart(store,products,DRIVE,cur=>setCartProgress(cur));setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||uniqueCount)},200)}}>
+        🛒 Remplir panier {currentStore.name} ({uniqueCount} produits)
       </button>
       <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,store,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
     </div>)}
     {store==='ecomix'&&(()=>{ const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b); return (<div>
       <div className="notice"><div className="notice-title">🌿 Eco-Mix</div><div className="notice-sub">Chaque produit dans l&apos;enseigne la moins chère.</div></div>
-      <button className="btn-cart" style={{background:'linear-gradient(135deg,#5BF5A8,#00C97A)',color:'#0A0A0F'}} onClick={()=>{setCartProgress(0);startCart(bestS.id,products,DRIVE,cur=>setCartProgress(cur));setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||products.length)},100)}}>
-        🛒 Remplir panier Eco-Mix ({products.length} produits)
+      <button className="btn-cart" style={{background:'linear-gradient(135deg,#5BF5A8,#00C97A)',color:'#0A0A0F'}} onClick={()=>{setCartProgress(0);startCart(bestS.id,products,DRIVE,cur=>setCartProgress(cur));setTimeout(()=>{const d=JSON.parse(localStorage.getItem('pm_cart')||'{}');setCartTotal(d.total||uniqueCount)},200)}}>
+        🛒 Remplir panier Eco-Mix ({uniqueCount} produits)
       </button>
       <div className="products">{products.map((p,i)=>{ const rp=getRealPrice(p.search,bestS.id,realPrices); return (<div key={i} className="product"><div><div className="p-name">{p.search}</div><div className="p-orig">{p.original}</div></div><div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div></div>) })}</div>
     </div>) })()}
