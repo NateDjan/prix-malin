@@ -1,5 +1,18 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { startCart, stopCart } from './cart.js'
+
+// ═══ Historique localStorage ═══
+function getHistory() { try { return JSON.parse(localStorage.getItem('pm_history') || '[]') } catch { return [] } }
+function saveToHistory(result, name) {
+  const h = getHistory()
+  const entry = { id: Date.now(), name: name || result.store || 'Ticket ' + (h.length + 1), result, date: new Date().toLocaleDateString('fr-FR'), productCount: result.products?.length || 0 }
+  h.unshift(entry)
+  if (h.length > 20) h.pop()
+  localStorage.setItem('pm_history', JSON.stringify(h))
+  return entry
+}
+function deleteFromHistory(id) { const h = getHistory().filter(e => e.id !== id); localStorage.setItem('pm_history', JSON.stringify(h)) }
+function renameInHistory(id, name) { const h = getHistory(); const e = h.find(x => x.id === id); if (e) e.name = name; localStorage.setItem('pm_history', JSON.stringify(h)) }
 
 const STORES = [
   { id: 'leclerc',     name: 'E.Leclerc',   letter: 'E', color: '#0052CC', factor: 1.00 },
@@ -59,9 +72,14 @@ async function analyzeImage(b64, mediaType) {
 
 async function fetchRealPrices(products, cp) {
   const prices = {}
-  await Promise.all([...products].sort((a,b)=>(b.price||0)-(a.price||0)).slice(0,5).map(async p => {
-    try { const d = await fetch(`/api/prix?q=${encodeURIComponent(p.search)}&cp=${encodeURIComponent(cp)}`).then(r=>r.json()); if(d.prices) prices[p.search]=d.prices } catch {}
-  }))
+  // Fetch ALL products in batches of 8 for speed
+  const batches = []
+  for (let i = 0; i < products.length; i += 8) batches.push(products.slice(i, i + 8))
+  for (const batch of batches) {
+    await Promise.all(batch.map(async p => {
+      try { const d = await fetch(`/api/prix?q=${encodeURIComponent(p.search)}&cp=${encodeURIComponent(cp)}`).then(r=>r.json()); if(d.prices) prices[p.search]=d.prices } catch {}
+    }))
+  }
   return prices
 }
 
@@ -80,6 +98,19 @@ function calcStoreTotal(products, storeId, realPrices) {
 
 function ecoTotal(products, realPrices) {
   return +products.reduce((sum,p)=>{ let best=(p.price||0)*Math.min(...STORES.map(s=>s.factor)); STORES.forEach(s=>{const rp=getRealPrice(p.search,s.id,realPrices);if(rp!=null)best=Math.min(best,rp)}); return sum+best }, 0).toFixed(2)
+}
+
+// Eco+ : prix le plus bas possible par produit (qualité moindre acceptée)
+function ecoPlusTotal(products) {
+  const cheapest = STORES.reduce((a,b)=>a.factor<b.factor?a:b)
+  return +(products.reduce((sum,p)=>sum+(p.price||0)*cheapest.factor, 0)).toFixed(2)
+}
+
+// Ouvrir en fenêtre côte à côte (moitié droite de l'écran)
+function openSplit(url) {
+  const w = Math.floor(screen.width / 2)
+  const h = screen.height
+  window.open(url, 'prix_malin_drive', `width=${w},height=${h},left=${w},top=0`)
 }
 
 // Cart logic is in src/cart.js
@@ -123,9 +154,12 @@ function ProgressBar({ total, cur, storeName, onClose }) {
   )
 }
 
-function ImportView({ onAnalyze, loading, error }) {
+function ImportView({ onAnalyze, onLoadHistory, loading, error }) {
   const [text, setText] = useState('')
   const [dragging, setDragging] = useState(false)
+  const [history, setHistory] = useState(getHistory)
+  const [editId, setEditId] = useState(null)
+  const [editName, setEditName] = useState('')
   const fileRef = useRef()
   const handleFile = useCallback(async file => {
     const ext = file.name.split('.').pop().toLowerCase()
@@ -159,6 +193,30 @@ function ImportView({ onAnalyze, loading, error }) {
       <button className="btn-analyse" disabled={loading||text.trim().length<5} onClick={()=>onAnalyze(text)}>⚡ Analyser</button>
     </div>
     {error && <div className="err">⚠️ {error}</div>}
+    {history.length>0&&(<>
+      <div className="sec-title" style={{marginTop:20}}>📋 HISTORIQUE</div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        {history.map(h=>(
+          <div key={h.id} style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.08)',borderRadius:12,padding:'10px 14px',display:'flex',alignItems:'center',gap:10}}>
+            {editId===h.id?(
+              <div style={{flex:1,display:'flex',gap:6}}>
+                <input type="text" value={editName} onChange={e=>setEditName(e.target.value)} style={{flex:1,background:'rgba(255,255,255,.08)',border:'1px solid rgba(91,245,168,.3)',borderRadius:8,padding:'4px 8px',color:'#F0EDE8',fontSize:12,outline:'none',fontFamily:'inherit'}} autoFocus onKeyDown={e=>{if(e.key==='Enter'){renameInHistory(h.id,editName);setEditId(null);setHistory(getHistory())}}}/>
+                <button onClick={()=>{renameInHistory(h.id,editName);setEditId(null);setHistory(getHistory())}} style={{background:'#5BF5A8',color:'#0A0A0F',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>OK</button>
+              </div>
+            ):(
+              <>
+                <div style={{flex:1,cursor:'pointer'}} onClick={()=>onLoadHistory(h)}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#F0EDE8'}}>{h.name}</div>
+                  <div style={{fontSize:11,color:'rgba(240,237,232,.4)'}}>{h.date} · {h.productCount} articles</div>
+                </div>
+                <button onClick={e=>{e.stopPropagation();setEditId(h.id);setEditName(h.name)}} style={{background:'none',border:'none',color:'rgba(240,237,232,.3)',cursor:'pointer',fontSize:14}} title="Renommer">✏️</button>
+                <button onClick={e=>{e.stopPropagation();deleteFromHistory(h.id);setHistory(getHistory())}} style={{background:'none',border:'none',color:'rgba(255,80,80,.4)',cursor:'pointer',fontSize:14}} title="Supprimer">🗑️</button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </>)}
   </>)
 }
 
@@ -175,8 +233,10 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
   const base = products.reduce((a,p)=>a+(p.price||0),0)
   const ecoAmt = ecoTotal(products, realPrices)
   const hasReal = Object.keys(realPrices).length>0
-  const currentStore = store&&store!=='ecomix'?STORES.find(x=>x.id===store):null
+  const currentStore = store&&store!=='ecomix'&&store!=='ecoplus'?STORES.find(x=>x.id===store):null
   const uniqueCount = [...new Set(products.map(p=>p.search))].length
+  const ecoPlusAmt = ecoPlusTotal(products)
+  const cheapestStore = STORES.reduce((a,b)=>a.factor<b.factor?a:b)
   return (<>
     <div className="ticket-info">
       <div><div className="ticket-store">{storeName||'Ticket'}</div><div className="ticket-meta">{date?`Le ${date} · `:''}{products.length} articles</div></div>
@@ -187,6 +247,10 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
     <div className={`ecomix ${store==='ecomix'?'sel':''}`} onClick={()=>setStore('ecomix')}>
       <div style={{display:'flex',alignItems:'center',gap:12}}><div style={{fontSize:28}}>🌿</div><div><div className="em-name">Eco-Mix</div><div className="em-sub">Chaque produit chez le moins cher</div></div></div>
       <div style={{textAlign:'right'}}><div className="em-amt">{ecoAmt} €</div><div className="em-save">-{(base-parseFloat(ecoAmt)).toFixed(2)} € éco.</div></div>
+    </div>
+    <div className={`ecomix ${store==='ecoplus'?'sel':''}`} onClick={()=>setStore('ecoplus')} style={{borderColor:'rgba(254,200,30,.25)',background:store==='ecoplus'?'rgba(254,200,30,.15)':'rgba(254,200,30,.05)'}}>
+      <div style={{display:'flex',alignItems:'center',gap:12}}><div style={{fontSize:28}}>💰</div><div><div className="em-name" style={{color:'#FEC81E'}}>Eco+</div><div className="em-sub">Tout chez {cheapestStore.name} (le moins cher)</div></div></div>
+      <div style={{textAlign:'right'}}><div className="em-amt" style={{color:'#FEC81E'}}>{ecoPlusAmt} €</div><div className="em-save" style={{color:'rgba(254,200,30,.7)'}}>-{(base-ecoPlusAmt).toFixed(2)} € vs ticket</div></div>
     </div>
     <div className="stores-grid">
       {STORES.map(s=>{ const ct=calcStoreTotal(products,s.id,realPrices); return (
@@ -199,8 +263,8 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
         </div>
       )})}
     </div>
-    {store&&store!=='ecomix'&&currentStore&&(<div>
-      <div className="notice"><div className="notice-title">🔐 {currentStore.name}</div><div className="notice-sub">{DRIVE[store]?.note}<br/>Clique <strong style={{color:'#5BF5A8'}}>Ouvrir</strong> sur chaque produit, ajoute-le au panier sur le site, puis passe au suivant.</div></div>
+    {store&&store!=='ecomix'&&store!=='ecoplus'&&currentStore&&(<div>
+      <div className="notice"><div className="notice-title">🔐 {currentStore.name}</div><div className="notice-sub">{DRIVE[store]?.note}<br/>Clique <strong style={{color:'#5BF5A8'}}>Ouvrir</strong> pour ajouter au panier. <em style={{color:'rgba(240,237,232,.35)'}}>Astuce : glisse l'onglet sur le côté pour voir les deux en même temps.</em></div></div>
       {(()=>{const cnt=products.filter((_,i)=>isOpen(store,i)).length; return cnt>0?(<div style={{display:'flex',gap:8,marginBottom:10}}>
         <div style={{flex:1,background:'rgba(91,245,168,.1)',borderRadius:10,padding:'10px 14px',textAlign:'center'}}><span style={{color:'#5BF5A8',fontWeight:800,fontSize:14}}>{cnt}/{products.length}</span><div style={{fontSize:11,color:'rgba(240,237,232,.4)'}}>ouverts</div></div>
         <a href={CART_URLS[store]||'#'} target="_blank" rel="noopener noreferrer" style={{flex:1,background:currentStore.color,borderRadius:10,padding:'10px 14px',textAlign:'center',textDecoration:'none',color:'#fff',fontWeight:800,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center'}}>🛒 Voir mon panier ↗</a>
@@ -210,12 +274,26 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
         <div style={{flex:1,minWidth:0}}><div className="p-name">{done?'✅ ':''}{p.search}</div><div className="p-orig">{p.original}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div>
-          <a href={url} target="_blank" rel="noopener noreferrer" onClick={()=>markOpen(store,i)} style={{background:done?'rgba(91,245,168,.15)':currentStore.color,color:done?'#5BF5A8':'#fff',padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}}>{done?'✅':'🔗 Ouvrir'}</a>
+          <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e)=>{e.preventDefault();markOpen(store,i);openSplit(url)}} style={{background:done?'rgba(91,245,168,.15)':currentStore.color,color:done?'#5BF5A8':'#fff',padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap',cursor:'pointer'}}>{done?'✅':'🔗 Ouvrir'}</a>
         </div>
       </div>) })}</div>
     </div>)}
+    {store==='ecoplus'&&(()=>{ const cfg=DRIVE[cheapestStore.id]; return (<div>
+      <div className="notice" style={{borderColor:'rgba(254,200,30,.3)',background:'rgba(254,200,30,.05)'}}><div className="notice-title" style={{color:'#FEC81E'}}>💰 Eco+ · {cheapestStore.name}</div><div className="notice-sub">Tous les produits au prix {cheapestStore.name}.<br/><strong style={{color:'#FEC81E'}}>Économie vs ticket : {((total||base)-ecoPlusAmt).toFixed(2)} €</strong></div></div>
+      {(()=>{const cnt=products.filter((_,i)=>isOpen(cheapestStore.id+'_eco',i)).length; return cnt>0?(<div style={{display:'flex',gap:8,marginBottom:10}}>
+        <div style={{flex:1,background:'rgba(254,200,30,.1)',borderRadius:10,padding:'10px 14px',textAlign:'center'}}><span style={{color:'#FEC81E',fontWeight:800,fontSize:14}}>{cnt}/{products.length}</span><div style={{fontSize:11,color:'rgba(240,237,232,.4)'}}>ouverts</div></div>
+        <a href={CART_URLS[cheapestStore.id]||'#'} target="_blank" rel="noopener noreferrer" style={{flex:1,background:'#FEC81E',borderRadius:10,padding:'10px 14px',textAlign:'center',textDecoration:'none',color:'#0A0A0F',fontWeight:800,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center'}}>🛒 Voir mon panier ↗</a>
+      </div>):null})()}
+      <div className="products">{products.map((p,i)=>{ const done=isOpen(cheapestStore.id+'_eco',i); const url=cfg?.url(p.search)||'#'; const ecoPrice=((p.price||0)*cheapestStore.factor); return (<div key={i} className="product" style={done?{opacity:.5}:{}}>
+        <div style={{flex:1,minWidth:0}}><div className="p-name">{done?'✅ ':''}{p.search}</div><div className="p-orig">{p.original}</div></div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div className="p-price" style={{color:'#FEC81E'}}>{ecoPrice.toFixed(2)} €</div>
+          <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e)=>{e.preventDefault();markOpen(cheapestStore.id+'_eco',i);openSplit(url)}} style={{background:done?'rgba(254,200,30,.15)':cheapestStore.color,color:done?'#FEC81E':'#0A0A0F',padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap',cursor:'pointer'}}>{done?'✅':'🔗 Ouvrir'}</a>
+        </div>
+      </div>) })}</div>
+    </div>) })()}
     {store==='ecomix'&&(()=>{ const bestS=STORES.reduce((a,b)=>a.factor<b.factor?a:b); const cfg=DRIVE[bestS.id]; return (<div>
-      <div className="notice"><div className="notice-title">🌿 Eco-Mix · {bestS.name}</div><div className="notice-sub">Clique <strong style={{color:'#5BF5A8'}}>Ouvrir</strong> pour chaque produit, ajoute-le au panier sur le site, puis passe au suivant.</div></div>
+      <div className="notice"><div className="notice-title">🌿 Eco-Mix · {bestS.name}</div><div className="notice-sub">Clique <strong style={{color:'#5BF5A8'}}>Ouvrir</strong> pour ajouter au panier. <em style={{color:'rgba(240,237,232,.35)'}}>Astuce : glisse l'onglet sur le côté pour voir les deux.</em></div></div>
       {(()=>{const cnt=products.filter((_,i)=>isOpen(bestS.id,i)).length; return cnt>0?(<div style={{display:'flex',gap:8,marginBottom:10}}>
         <div style={{flex:1,background:'rgba(91,245,168,.1)',borderRadius:10,padding:'10px 14px',textAlign:'center'}}><span style={{color:'#5BF5A8',fontWeight:800,fontSize:14}}>{cnt}/{products.length}</span><div style={{fontSize:11,color:'rgba(240,237,232,.4)'}}>ouverts</div></div>
         <a href={CART_URLS[bestS.id]||'#'} target="_blank" rel="noopener noreferrer" style={{flex:1,background:'#5BF5A8',borderRadius:10,padding:'10px 14px',textAlign:'center',textDecoration:'none',color:'#0A0A0F',fontWeight:800,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center'}}>🛒 Voir mon panier ↗</a>
@@ -225,12 +303,11 @@ function CompareView({ result, realPrices, cp, onSetCp, onFetchPrices }) {
         <div style={{flex:1,minWidth:0}}><div className="p-name">{done?'✅ ':''}{p.search}</div><div className="p-orig">{p.original}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <div className={`p-price ${rp!=null?'real':''}`}>{rp!=null?rp.toFixed(2):(p.price||0).toFixed(2)} €</div>
-          <a href={url} target="_blank" rel="noopener noreferrer" onClick={()=>markOpen(bestS.id,i)} style={{background:done?'rgba(91,245,168,.15)':bestS.color,color:done?'#5BF5A8':'#fff',padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}}>{done?'✅':'🔗 Ouvrir'}</a>
+          <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e)=>{e.preventDefault();markOpen(bestS.id,i);openSplit(url)}} style={{background:done?'rgba(91,245,168,.15)':bestS.color,color:done?'#5BF5A8':'#fff',padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap',cursor:'pointer'}}>{done?'✅':'🔗 Ouvrir'}</a>
         </div>
       </div>) })}</div>
     </div>) })()}
     {!cp&&(<div className="cp-box"><div className="cp-label">📍 Code postal pour les vrais prix</div><div className="cp-row"><input className="cp-input" type="text" placeholder="Ex: 92410" maxLength={5} value={cpInput} onChange={e=>setCpInput(e.target.value)}/><button className="cp-btn" onClick={()=>{if(cpInput.length>=4){onSetCp(cpInput);onFetchPrices(products,cpInput)}}}>OK</button></div></div>)}
-    {cartProgress!==null&&(()=>{ const s=store&&store!=='ecomix'?STORES.find(x=>x.id===store):STORES.reduce((a,b)=>a.factor<b.factor?a:b); return <ProgressBar total={cartTotal||products.length} cur={cartProgress} storeName={s?.name||''} onClose={()=>{stopCart();setCartProgress(null)}} /> })()}
   </>)
 }
 
@@ -247,9 +324,16 @@ export default function App() {
       const res = b64&&mediaType ? await analyzeImage(b64,mediaType) : text ? await analyzeText(text) : (() => { throw new Error('Format non supporté') })()
       if (!res.products?.length) throw new Error('Aucun produit trouvé')
       setResult(res); setLoading(false)
+      // Auto-save to history
+      saveToHistory(res)
       const cpVal = cp||localStorage.getItem('prix_malin_cp')||''
       if (cpVal) fetchRealPrices(res.products,cpVal).then(rp=>{ if(Object.keys(rp).length>0) setRealPrices(prev=>({...prev,...rp})) })
     } catch(e) { setError(e.message); setLoading(false); setSec('import') }
+  }, [cp])
+  const handleLoadHistory = useCallback((entry) => {
+    setResult(entry.result); setSec('compare'); setError('')
+    const cpVal = cp||localStorage.getItem('prix_malin_cp')||''
+    if (cpVal && entry.result?.products) fetchRealPrices(entry.result.products,cpVal).then(rp=>{ if(Object.keys(rp).length>0) setRealPrices(prev=>({...prev,...rp})) })
   }, [cp])
   return (<div className="app">
     <h1>Prix Malin 🛒</h1>
@@ -259,7 +343,7 @@ export default function App() {
       <button className={`sec-btn ${sec==='compare'&&result?'active':''}`} disabled={!result} onClick={()=>result&&setSec('compare')}>🔍 Comparer</button>
     </div>
     {loading?(<div className="spinner"><div className="spin">⏳</div><div style={{fontSize:14,fontWeight:700,marginBottom:4}}>Analyse en cours...</div><div style={{fontSize:12,color:'rgba(240,237,232,.4)'}}>Quelques secondes...</div></div>)
-    :sec==='import'||!result?(<ImportView onAnalyze={handleAnalyze} loading={loading} error={error}/>)
+    :sec==='import'||!result?(<ImportView onAnalyze={handleAnalyze} onLoadHistory={handleLoadHistory} loading={loading} error={error}/>)
     :(<CompareView result={result} realPrices={realPrices} cp={cp} onSetCp={val=>{setCp(val);localStorage.setItem('prix_malin_cp',val)}} onFetchPrices={(prods,cpVal)=>fetchRealPrices(prods,cpVal).then(rp=>{if(Object.keys(rp).length>0)setRealPrices(prev=>({...prev,...rp}))})}/>)}
   </div>)
 }
