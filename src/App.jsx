@@ -20,7 +20,7 @@ const CART_SEL = {
 }
 
 const SYS = 'Tu es un assistant qui extrait des produits de tickets de caisse. Reponds UNIQUEMENT avec du JSON valide, sans markdown, sans explication.'
-const FP = 'Lis TOUS les produits et prix de ce ticket. IMPORTANT: price = prix TOTAL de la ligne, qty = toujours 1. Le champ search = nom descriptif du produit pour recherche en supermarché : inclure la MARQUE + le TYPE de produit complet (ex: "Nutella pâte à tartiner", "Président beurre doux", "Lactel lait demi-écrémé", "Mutti double concentré de tomate"). NE PAS inclure le grammage, le poids, la quantité ni les codes. Le but est que la recherche trouve le BON produit en premier sur un site drive. JSON uniquement:\n{"products":[{"original":"texte brut du ticket","search":"marque + type produit descriptif","qty":1,"price":0.00}],"store":"enseigne ou vide","total":0.00,"date":"JJ/MM/AAAA ou vide"}'
+const FP = 'Lis TOUS les produits et prix de ce ticket. IMPORTANT: price = prix TOTAL de la ligne, qty = toujours 1. Le champ search = nom du produit pour recherche en supermarché : inclure la MARQUE + le NOM COMPLET du produit (ex: "Nutella pâte à tartiner", "Président beurre doux", "Lactel lait demi-écrémé", "Mutti double concentré de tomate"). NE JAMAIS inclure : le grammage, le poids, la quantité, les codes, ni les noms de RAYONS ou CATEGORIES (pas de "épicerie", "crèmerie", "boisson", "frais", "surgelé", etc). Uniquement marque + type de produit. JSON uniquement:\n{"products":[{"original":"texte brut du ticket","search":"marque + nom produit","qty":1,"price":0.00}],"store":"enseigne ou vide","total":0.00,"date":"JJ/MM/AAAA ou vide"}'
 
 async function callProxy(messages) {
   const r = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: SYS, messages }) })
@@ -86,10 +86,10 @@ function ecoTotal(products, realPrices) {
 const DRIVE = {
   leclerc:     { note: 'Connecte-toi sur Leclerc Drive avant de démarrer', url: q => `https://fd3-courses.leclercdrive.fr/magasin-169203-169203-Rueil-Malmaison-Boulevard-National/recherche.aspx?TexteRecherche=${encodeURIComponent(q)}` },
   carrefour:   { note: 'Connecte-toi sur carrefour.fr avant de démarrer',   url: q => `https://www.carrefour.fr/s?q=${encodeURIComponent(q)}&ref=search` },
-  intermarche: { note: 'Connecte-toi sur intermarche.com et sélectionne ton magasin avant de démarrer', url: q => `https://www.intermarche.com/courses-en-ligne/recherche?q=${encodeURIComponent(q)}` },
-  auchan:      { note: 'Connecte-toi sur auchan.fr et sélectionne ton drive avant de démarrer', url: q => `https://www.auchan.fr/recherche/${encodeURIComponent(q)}` },
+  intermarche: { note: 'Sélectionne ton magasin sur intermarche.com avant de démarrer', url: q => `https://www.intermarche.com/recherche/${encodeURIComponent(q)}` },
+  auchan:      { note: 'Sélectionne ton drive sur auchan.fr avant de démarrer', url: q => `https://www.auchan.fr/recherche?text=${encodeURIComponent(q)}` },
   monoprix:    { note: 'Connecte-toi sur courses.monoprix.fr avant de démarrer', url: q => `https://courses.monoprix.fr/search?q=${encodeURIComponent(q)}` },
-  lidl:        { note: 'Lidl ne propose pas de drive en ligne. Recherche via Google.', url: q => `https://www.google.fr/search?q=${encodeURIComponent(q + ' Lidl')}` },
+  lidl:        { note: 'Connecte-toi sur lidl.fr avant de démarrer', url: q => `https://www.lidl.fr/q/search?q=${encodeURIComponent(q)}` },
 }
 
 const CART_URLS = {
